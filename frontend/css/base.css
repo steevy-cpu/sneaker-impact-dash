@@ -1,0 +1,548 @@
+/* ================================================================
+   BASE.CSS — Premium SaaS design system
+   SneakerImpact Inspection Dashboard
+   ================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ----------------------------------------------------------------
+   CSS custom properties (design tokens)
+   ---------------------------------------------------------------- */
+:root {
+  /* ── Fonts ── */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+
+  /* ── Type scale ── */
+  --text-xs:   11px;
+  --text-sm:   12px;
+  --text-base: 14px;
+  --text-md:   15px;
+  --text-lg:   18px;
+  --text-xl:   22px;
+  --text-2xl:  28px;
+  --text-3xl:  38px;
+
+  /* ── Font weights ── */
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semi:    600;
+  --weight-bold:    700;
+  --weight-black:   800;
+
+  /* ── Surfaces ── */
+  --bg:           #f0f4f8;
+  --card-bg:      #ffffff;
+  --surface-2:    #f8fafc;
+  --border:       #e2e8f0;
+  --border-light: #f1f5f9;
+
+  /* ── Text hierarchy ── */
+  --text:        #0f172a;
+  --text-muted:  #64748b;
+  --text-light:  #94a3b8;
+  --text-xlight: #cbd5e1;
+
+  /* ── Brand palette ── */
+  --brand-dark:   #202020;
+  --brand-orange: #ff7f24;
+  --brand-teal:   #08a6c2;
+
+  /* ── Primary = teal ── */
+  --primary:         #08a6c2;
+  --primary-dark:    #0891b2;
+  --primary-darker:  #0e7490;
+  --primary-bg:      #ecfeff;
+  --primary-border:  #a5f3fc;
+
+  /* ── Prediction — REUSE ── */
+  --reuse:        #16a34a;
+  --reuse-dark:   #15803d;
+  --reuse-bg:     #f0fdf4;
+  --reuse-border: #86efac;
+
+  /* ── Prediction — RECYCLE (brand orange) ── */
+  --recycle:        #ff7f24;
+  --recycle-dark:   #ea6c0e;
+  --recycle-bg:     #fff7ed;
+  --recycle-border: #fdba74;
+
+  /* ── Prediction — REVIEW ── */
+  --review:        #f59e0b;
+  --review-dark:   #d97706;
+  --review-bg:     #fffbeb;
+  --review-border: #fcd34d;
+
+  /* ── Error ── */
+  --error:        #dc2626;
+  --error-dark:   #b91c1c;
+  --error-bg:     #fef2f2;
+  --error-border: #fca5a5;
+
+  /* ── Shadow system ── */
+  --shadow-xs:    0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:    0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg:    0 8px 24px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.04);
+  --shadow-hover: 0 8px 28px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06);
+
+  /* ── Border radii ── */
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius:      10px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-xl:   22px;
+  --radius-full: 9999px;
+
+  /* ── Transitions ── */
+  --ease:      cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast:    0.12s ease;
+  --t:         0.2s ease;
+  --t-slow:    0.3s ease;
+
+  /* ── Layout ── */
+  --sidebar-w: 230px;
+  --header-h:  64px;
+}
+
+/* ----------------------------------------------------------------
+   Reset
+   ---------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+a  { text-decoration: none; color: inherit; }
+ul { list-style: none; padding: 0; margin: 0; }
+img { display: block; max-width: 100%; }
+button { cursor: pointer; font-family: inherit; font-size: inherit; }
+h1, h2, h3, h4 { margin: 0; }
+
+/* ----------------------------------------------------------------
+   App shell — CSS Grid layout
+   Two columns: fixed-width sidebar | flexible main area
+   Two rows:    fixed-height header (spans both columns) | content
+   ---------------------------------------------------------------- */
+.layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: var(--header-h) 1fr;
+  min-height: 100vh;
+}
+
+/* ----------------------------------------------------------------
+   Header
+   Always uses --brand-dark regardless of light/dark theme.
+   The sidebar shares the same background so they read as one panel.
+   ---------------------------------------------------------------- */
+.header {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  background: var(--brand-dark);
+  display: flex;
+  align-items: center;
+  padding: 0 24px 0 0;
+  gap: 0;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 20;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--header-h);
+  padding: 0 20px;
+  border-right: 1px solid rgba(255,255,255,0.08);
+  white-space: nowrap;
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+}
+
+.header-logo-img {
+  height: 34px;
+  width: auto;
+  max-width: 170px;
+  object-fit: contain;
+  /* Force the logo to render as solid white on the dark header,
+     regardless of its original colours. Works for any single-colour logo. */
+  filter: brightness(0) invert(1);
+}
+
+.header-logo-text {
+  font-size: 15px;
+  font-weight: var(--weight-bold);
+  color: #f8fafc;
+  letter-spacing: -0.3px;
+}
+.header-logo-text span { color: var(--brand-orange); }
+
+.header-title {
+  padding-left: 20px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: rgba(255,255,255,0.38);
+  letter-spacing: 0.1px;
+}
+
+.header-spacer { flex: 1; }
+
+.mode-badge {
+  padding: 4px 13px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+.mode-badge.simulation {
+  background: rgba(8,166,194,0.14);
+  color: #67e8f9;
+  border-color: rgba(8,166,194,0.3);
+}
+.mode-badge.actual {
+  background: rgba(22,163,74,0.15);
+  color: #86efac;
+  border-color: rgba(22,163,74,0.3);
+}
+
+/* ── Theme toggle button (always on dark header) ── */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.45);
+  font-size: 15px;
+  margin-right: 12px;
+  flex-shrink: 0;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.theme-toggle:hover {
+  background: rgba(255,255,255,0.12);
+  color: #f1f5f9;
+}
+
+/* ----------------------------------------------------------------
+   Sidebar
+   ---------------------------------------------------------------- */
+.sidebar {
+  grid-column: 1;
+  grid-row: 2;
+  background: var(--brand-dark);
+  padding: 16px 10px 24px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+.nav-section { margin-bottom: 24px; }
+
+.nav-section-label {
+  font-size: 9px;
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: rgba(255,255,255,0.2);
+  padding: 0 10px 8px;
+  display: block;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  color: rgba(255,255,255,0.45);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  margin-bottom: 2px;
+  position: relative;
+  border-left: 2px solid transparent;
+}
+.nav-link:hover {
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.88);
+  border-left-color: rgba(255,255,255,0.1);
+}
+.nav-link.active {
+  background: rgba(8,166,194,0.18);
+  color: #67e8f9;
+  border-left-color: var(--brand-teal);
+  font-weight: var(--weight-semi);
+}
+.nav-link.nav-disabled {
+  color: rgba(255,255,255,0.16);
+  cursor: default;
+  pointer-events: none;
+}
+
+.nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+/* Lucide SVG icon base styles */
+.icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.icon-inline {
+  position: relative;
+  top: -1px;
+}
+
+.nav-soon {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: var(--weight-semi);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.25);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  letter-spacing: 0.2px;
+}
+
+/* ----------------------------------------------------------------
+   Main content area
+   ---------------------------------------------------------------- */
+.main {
+  grid-column: 2;
+  grid-row: 2;
+  padding: 32px 36px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+/* ----------------------------------------------------------------
+   Page header
+   ---------------------------------------------------------------- */
+.page-header { margin-bottom: 28px; }
+
+.page-title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+  margin-bottom: 4px;
+  letter-spacing: -0.3px;
+  line-height: var(--leading-tight, 1.25);
+}
+
+.page-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ----------------------------------------------------------------
+   Section titles
+   ---------------------------------------------------------------- */
+.section-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  margin-bottom: 14px;
+}
+
+/* ----------------------------------------------------------------
+   Utility classes
+   ---------------------------------------------------------------- */
+.text-muted  { color: var(--text-muted); }
+.text-light  { color: var(--text-light); }
+.text-sm     { font-size: var(--text-sm); }
+.text-xs     { font-size: var(--text-xs); }
+.font-mono   { font-family: var(--font-mono); }
+.font-bold   { font-weight: var(--weight-bold); }
+
+.flex        { display: flex; }
+.flex-center { display: flex; align-items: center; }
+.gap-2       { gap: 8px; }
+.gap-3       { gap: 12px; }
+
+.mt-4  { margin-top: 16px; }
+.mt-6  { margin-top: 24px; }
+.mb-4  { margin-bottom: 16px; }
+.mb-6  { margin-bottom: 24px; }
+
+/* ----------------------------------------------------------------
+   Live indicator (pulsing dot)
+   ---------------------------------------------------------------- */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background: #22c55e;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: livepulse 2.4s ease-in-out infinite;
+}
+
+@keyframes livepulse {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.78); }
+}
+
+/* ----------------------------------------------------------------
+   Skeleton loading animation
+   ---------------------------------------------------------------- */
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 25%, var(--border-light) 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ----------------------------------------------------------------
+   Loading / Error / Empty states
+   ---------------------------------------------------------------- */
+.loading-state {
+  text-align: center;
+  padding: 56px 24px;
+  color: var(--text-light);
+  font-size: var(--text-sm);
+  letter-spacing: 0.1px;
+}
+
+.error-state {
+  padding: 20px 24px;
+  color: var(--error);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.6;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 56px 24px;
+  color: var(--text-light);
+  font-size: var(--text-sm);
+  background: var(--card-bg);
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* ----------------------------------------------------------------
+   Back link / breadcrumb
+   ---------------------------------------------------------------- */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  margin-bottom: 20px;
+  transition: color var(--t-fast);
+}
+.back-link:hover { color: var(--primary-dark); text-decoration: underline; }
+
+/* ================================================================
+   THEME TOGGLE BUTTON + DARK MODE
+
+   How it works:
+     1. theme.js runs synchronously in <head> before first paint.
+     2. It reads localStorage("si_theme") and sets data-theme="dark" on <html>.
+     3. All dark-mode overrides below are scoped to [data-theme="dark"], so
+        switching is a single attribute change — no class toggling, no FOUC.
+   ================================================================ */
+
+/* ── Dark mode custom properties — override the :root token values ── */
+[data-theme="dark"] {
+  --bg:           #0a0e1a;
+  --card-bg:      #0f172a;
+  --surface-2:    #0d1321;
+  --border:       #1e293b;
+  --border-light: #172034;
+  --text:         #e2e8f0;
+  --text-muted:   #7c8ea6;
+  --text-light:   #4a5568;
+  --text-xlight:  #2d3e52;
+
+  --primary-bg:     rgba(8,166,194,0.12);
+  --primary-border: rgba(8,166,194,0.28);
+  --reuse-bg:       rgba(22,163,74,0.10);
+  --reuse-border:   rgba(22,163,74,0.28);
+  --recycle-bg:     rgba(255,127,36,0.10);
+  --recycle-border: rgba(255,127,36,0.28);
+  --review-bg:      rgba(245,158,11,0.08);
+  --review-border:  rgba(245,158,11,0.28);
+  --error-bg:       rgba(220,38,38,0.10);
+  --error-border:   rgba(220,38,38,0.28);
+
+  --shadow-xs:    0 1px 2px rgba(0,0,0,0.4);
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md:    0 4px 16px rgba(0,0,0,0.55), 0 2px 4px rgba(0,0,0,0.3);
+  --shadow-lg:    0 8px 28px rgba(0,0,0,0.65), 0 4px 8px rgba(0,0,0,0.35);
+  --shadow-hover: 0 8px 28px rgba(0,0,0,0.65), 0 2px 10px rgba(0,0,0,0.4);
+}
+
+/* ── Override hardcoded light colours in components ── */
+[data-theme="dark"] thead th               { background: #070c18; border-bottom-color: var(--border); }
+[data-theme="dark"] tbody tr:hover         { background: #1a2640; }
+[data-theme="dark"] .card-action           { color: var(--primary); }
+[data-theme="dark"] .img-cell              { background: #1e293b; }
+[data-theme="dark"] .img-cell-label        { background: var(--card-bg); border-top-color: var(--border); }
+[data-theme="dark"] .img-cell-placeholder  { background: #1e293b; color: var(--text-light); }
+[data-theme="dark"] .thumb-placeholder     { background: #1e293b; border-color: var(--border); color: var(--text-light); }
+[data-theme="dark"] .override-card-header  { background: #070c18; border-bottom-color: var(--border); }
+[data-theme="dark"] .override-card         { border-color: var(--border); }
+[data-theme="dark"] .meta-key              { background: #070c18; }
+[data-theme="dark"] .form-select           { background: var(--card-bg); color: var(--text); border-color: var(--border); }
+[data-theme="dark"] .form-textarea         { background: var(--card-bg); color: var(--text); border-color: var(--border); }
+[data-theme="dark"] .decision-btn          { background: #1a2436; color: var(--text-muted); border-color: var(--border); }
+[data-theme="dark"] .decision-btn:hover    { background: #22304a; color: var(--text); }
+[data-theme="dark"] .period-btn            { background: var(--card-bg); color: var(--text-muted); border-color: var(--border); }
+[data-theme="dark"] .period-btn:hover      { background: #1a2436; color: var(--text); }
+[data-theme="dark"] .analytics-card        { background: var(--card-bg); border-color: var(--border); }
+[data-theme="dark"] .chart-card            { background: var(--card-bg); border-color: var(--border); }
+[data-theme="dark"] .health-stat           { background: var(--card-bg); border-color: var(--border); }
+[data-theme="dark"] .camera-card           { background: #070c18; border-color: var(--border); }
+[data-theme="dark"] .health-mode-banner.simulation { background: rgba(254,249,195,0.05); border-color: rgba(253,224,71,0.2); }
+[data-theme="dark"] .health-mode-banner.actual     { background: rgba(22,163,74,0.07); border-color: rgba(134,239,172,0.2); }
+[data-theme="dark"] .queue-banner          { background: var(--review-bg); border-color: var(--review-border); }
+[data-theme="dark"] .queue-banner.empty    { background: var(--reuse-bg); border-color: var(--reuse-border); }
+[data-theme="dark"] .ai-context-box        { background: var(--primary-bg); border-color: var(--primary-border); }
+[data-theme="dark"] .ai-context-box.completed { background: var(--reuse-bg); border-color: var(--reuse-border); }
+[data-theme="dark"] .page-btn              { background: var(--card-bg); color: var(--text-muted); border-color: var(--border); }
+[data-theme="dark"] .page-btn:hover:not(:disabled) { background: #1a2436; color: var(--text); }
+[data-theme="dark"] .refresh-bar           { background: var(--card-bg); border-color: var(--border); }
+[data-theme="dark"] .table-wrap            { background: var(--card-bg); border-color: var(--border); }
+[data-theme="dark"] .stat-card             { background: var(--card-bg); border-color: var(--border); }
+[data-theme="dark"] .stat-card:hover       { box-shadow: 0 8px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(8,166,194,0.12); }
+[data-theme="dark"] .stat-icon-wrap        { filter: brightness(1.2); }
+[data-theme="dark"] .chart-insight         { background: #111f35; border-left-color: var(--primary); }
+[data-theme="dark"] .nav-link.active       { background: rgba(8,166,194,0.16); color: #67e8f9; border-left-color: var(--brand-teal); box-shadow: inset 3px 0 8px rgba(8,166,194,0.08); }
+[data-theme="dark"] .result-card           { background: var(--card-bg); }
+[data-theme="dark"] .override-card-body    { background: var(--card-bg); }
+[data-theme="dark"] .card                  { background: var(--card-bg); border-color: var(--border); }
+[data-theme="dark"] .table-wrap table      { background: var(--card-bg); }

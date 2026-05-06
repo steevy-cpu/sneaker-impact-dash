@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shoe Detail — Sneaker Impact</title>
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/components.css?v=6">
+</head>
+<body>
+<div class="layout">
+
+    <!-- ── HEADER ─────────────────────────────────────────────── -->
+    <header class="header">
+        <div class="header-logo">
+            <img src="assets/Sneaker_impact_logo.avif"
+                 alt="Sneaker Impact"
+                 class="header-logo-img"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <span class="header-logo-text" style="display:none;">Sneaker<span>Impact</span></span>
+        </div>
+        
+        <span class="header-title">Inspection Dashboard</span>
+        <div class="header-spacer"></div>
+        <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme"><span id="theme-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span></button>
+        <span class="mode-badge simulation" id="mode-badge">SIMULATION MODE</span>
+    </header>
+
+    <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+    <nav class="sidebar">
+        <div class="nav-section">
+            <span class="nav-section-label">Main</span>
+            <a href="index.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="3" y="15" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/></svg></span> Dashboard
+            </a>
+            <a href="live_feed.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Live Feed
+            </a>
+            <a href="review_queue.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span> Review Queue
+            </a>
+        </div>
+        <div class="nav-section">
+            <span class="nav-section-label">Reports</span>
+            <a href="analytics.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg></span> Analytics
+            </a>
+            <a href="system_health.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></span> System Health
+            </a>
+        </div>
+    </nav>
+
+    <!-- ── MAIN ────────────────────────────────────────────────── -->
+    <main class="main">
+        <!--
+            detail-root is entirely replaced by shoe_detail.js.
+            The back link, page header, image grid, result cards,
+            and metadata table are all rendered into this element.
+        -->
+        <div id="detail-root">
+            <div class="loading-state">Loading shoe record...</div>
+        </div>
+    </main>
+
+</div><!-- /.layout -->
+
+<script src="js/icons.js"></script>
+<script src="js/api.js?v=6"></script>
+<script src="js/utils.js"></script>
+<script src="js/shoe_detail.js"></script>
+</body>
+</html>

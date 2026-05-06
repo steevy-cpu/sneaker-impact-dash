@@ -1,0 +1,67 @@
+# ── Python ────────────────────────────────────────────────────────
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── Environment / secrets ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Database ──────────────────────────────────────────────────────
+sneakers.db
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Logs ──────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── macOS artifacts ───────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# ── Editor / IDE ──────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# ── Testing / tooling ─────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Node (future-proof) ───────────────────────────────────────────
+node_modules/
+npm-debug.log*
+
+# ── Temporary / generated ─────────────────────────────────────────
+*.tmp
+*.bak
+*.orig
+sneaker_impact_*.csv
+
+# ── Claude Code local config ──────────────────────────────────────
+.claude/
+
+# ── Images uploaded by actual mode (not checked in) ───────────────
+images/
