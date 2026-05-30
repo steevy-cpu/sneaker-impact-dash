@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Labeling — Sneaker Impact</title>
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/components.css?v=6">
+</head>
+<body>
+<div class="layout">
+
+    <!-- ── HEADER ─────────────────────────────────────────────── -->
+    <header class="header">
+        <div class="header-logo">
+            <img src="assets/Sneaker_impact_logo.avif"
+                 alt="Sneaker Impact"
+                 class="header-logo-img"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <span class="header-logo-text" style="display:none;">Sneaker<span>Impact</span></span>
+        </div>
+        <span class="header-title">Inspection Dashboard</span>
+        <div class="header-spacer"></div>
+        <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme"><span id="theme-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span></button>
+        <span class="mode-badge simulation" id="mode-badge">SIMULATION MODE</span>
+    </header>
+
+    <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+    <nav class="sidebar">
+        <div class="nav-section">
+            <span class="nav-section-label">Main</span>
+            <a href="index.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="3" y="15" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/></svg></span> Dashboard
+            </a>
+            <a href="live_feed.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Live Feed
+            </a>
+            <a href="review_queue.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span> Review Queue
+            </a>
+        </div>
+        <div class="nav-section">
+            <span class="nav-section-label">Tools</span>
+            <a href="labeling.html" class="nav-link active">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></span> Labeling
+            </a>
+        </div>
+        <div class="nav-section">
+            <span class="nav-section-label">Reports</span>
+            <a href="analytics.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg></span> Analytics
+            </a>
+            <a href="system_health.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></span> System Health
+            </a>
+        </div>
+    </nav>
+
+    <!-- ── MAIN ────────────────────────────────────────────────── -->
+    <main class="main">
+        <div class="page-header">
+            <h1 class="page-title">Labeling</h1>
+            <p class="page-subtitle">
+                Load a folder of shoe photos, tag each one, and download them renamed
+                like <code>shoe_reuse_blue_nike_1.jpg</code>. Images never leave your browser.
+            </p>
+        </div>
+
+        <!-- ── STAGE 1: UPLOAD ─────────────────────────────────── -->
+        <section id="upload-stage" class="lbl-stage">
+            <div class="lbl-dropzone" id="dropzone">
+                <input type="file" id="file-input" accept="image/*" multiple webkitdirectory hidden>
+                <input type="file" id="file-input-files" accept="image/*" multiple hidden>
+                <div class="lbl-dropzone-icon">
+                    <svg class="icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                </div>
+                <p class="lbl-dropzone-title">Drop a folder of images here</p>
+                <p class="lbl-dropzone-sub">or choose what to load</p>
+                <div class="lbl-dropzone-actions">
+                    <button class="btn-primary" id="pick-folder-btn" type="button">Select folder</button>
+                    <button class="btn-secondary" id="pick-files-btn" type="button">Select files</button>
+                </div>
+                <p class="lbl-dropzone-hint">JPG, PNG, WEBP, AVIF, GIF — only image files are kept.</p>
+            </div>
+        </section>
+
+        <!-- ── STAGE 2: LABELING ───────────────────────────────── -->
+        <section id="label-stage" class="lbl-stage" hidden>
+            <!-- progress -->
+            <div class="lbl-progress">
+                <div class="lbl-progress-bar"><div class="lbl-progress-fill" id="progress-fill"></div></div>
+                <div class="lbl-progress-meta">
+                    <span id="progress-count">0 of 0 labeled</span>
+                    <button class="lbl-link-btn" id="restart-btn" type="button">Start over</button>
+                </div>
+            </div>
+
+            <div class="lbl-workspace">
+                <!-- image viewer -->
+                <div class="lbl-viewer">
+                    <div class="lbl-viewer-frame">
+                        <img id="viewer-img" alt="Current shoe">
+                    </div>
+                    <div class="lbl-viewer-bar">
+                        <button class="lbl-nav-btn" id="prev-btn" type="button" title="Previous (←)">
+                            <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                        </button>
+                        <div class="lbl-viewer-info">
+                            <span class="lbl-viewer-pos" id="viewer-pos">1 / 1</span>
+                            <span class="lbl-viewer-name" id="viewer-name" title="">filename.jpg</span>
+                        </div>
+                        <button class="lbl-nav-btn" id="next-btn" type="button" title="Next (→)">
+                            <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- label controls -->
+                <div class="lbl-controls">
+                    <!-- Decision -->
+                    <div class="lbl-field">
+                        <label class="lbl-field-label">Decision</label>
+                        <div class="lbl-decision-row" id="decision-group"></div>
+                    </div>
+
+                    <!-- Color -->
+                    <div class="lbl-field">
+                        <label class="lbl-field-label">Color</label>
+                        <div class="lbl-swatch-grid" id="color-group"></div>
+                    </div>
+
+                    <!-- Brand -->
+                    <div class="lbl-field">
+                        <label class="lbl-field-label">Brand</label>
+                        <div class="lbl-chip-row" id="brand-group"></div>
+                        <div class="lbl-custom-brand" id="custom-brand-wrap" hidden>
+                            <input type="text" id="custom-brand-input" class="lbl-text-input"
+                                   placeholder="Type a brand name…" maxlength="40" autocomplete="off">
+                            <button class="btn-secondary" id="custom-brand-add" type="button">Add</button>
+                        </div>
+                    </div>
+
+                    <!-- Preview + advance -->
+                    <div class="lbl-field lbl-field-preview">
+                        <span class="lbl-field-label">New name</span>
+                        <code class="lbl-name-preview" id="name-preview">—</code>
+                    </div>
+
+                    <div class="lbl-controls-actions">
+                        <button class="btn-primary" id="apply-next-btn" type="button" disabled>Save &amp; next</button>
+                        <button class="btn-success" id="finish-btn" type="button" hidden>Finish &amp; download ZIP</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── STAGE 3: DONE ───────────────────────────────────── -->
+        <section id="done-stage" class="lbl-stage" hidden>
+            <div class="lbl-done-card">
+                <div class="lbl-done-icon">
+                    <svg class="icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>
+                </div>
+                <h2 class="lbl-done-title">All set</h2>
+                <p class="lbl-done-sub" id="done-sub">Your renamed images are downloading.</p>
+                <div class="lbl-done-actions">
+                    <button class="btn-primary" id="redownload-btn" type="button">Download again</button>
+                    <button class="btn-secondary" id="label-more-btn" type="button">Label another folder</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+</div><!-- /.layout -->
+
+<script src="js/icons.js"></script>
+<script src="js/vendor/jszip.min.js"></script>
+<script src="js/labeling.js?v=2"></script>
+</body>
+</html>
