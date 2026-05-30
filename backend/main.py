@@ -77,6 +77,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# HTML pages have no "?v=" cache-buster in their URL (unlike the JS/CSS),
+# so StaticFiles' ETag-only response lets browsers heuristically serve a
+# stale page — e.g. an old nav bar missing a newly added link. Force HTML
+# to always revalidate (304 when unchanged, fresh content when not).
+@app.middleware("http")
+async def revalidate_html(request, call_next):
+    response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Static file mounts
 # These must come BEFORE router includes so FastAPI resolves them first.
