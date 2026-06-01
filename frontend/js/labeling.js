@@ -16,8 +16,9 @@
 // ---------------------------------------------------------------------------
 
 const DECISIONS = [
-    { key: "reuse",   label: "Reuse",   cls: "decision-reuse" },
-    { key: "recycle", label: "Recycle", cls: "decision-recycle" },
+    { key: "reuse",   label: "Reuse",          cls: "decision-reuse" },
+    { key: "recycle", label: "Recycle",        cls: "decision-recycle" },
+    { key: "na",      label: "Not Applicable", cls: "decision-na" },
 ];
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|avif|gif|bmp|tiff?)$/i;
@@ -257,7 +258,7 @@ function previewName(it) {
 async function finish() {
     const unlabeled = state.items.filter(it => !isLabeled(it)).length;
     if (unlabeled > 0) {
-        alert(`${unlabeled} image(s) still need a Reuse or Recycle label.`);
+        alert(`${unlabeled} image(s) still need a Reuse, Recycle, or Not Applicable label.`);
         return;
     }
 

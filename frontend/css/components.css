@@ -699,10 +699,12 @@ td {
 .decision-btn.decision-reuse.selected   { background: var(--reuse-bg);   color: var(--reuse);   border-color: var(--reuse); }
 .decision-btn.decision-recycle.selected { background: var(--recycle-bg); color: var(--recycle); border-color: var(--recycle); }
 .decision-btn.decision-review.selected  { background: var(--review-bg);  color: var(--review);  border-color: var(--review); }
+.decision-btn.decision-na.selected      { background: var(--surface-2);  color: var(--text);    border-color: #94a3b8; }
 
 .decision-btn.decision-reuse:hover   { border-color: var(--reuse);   color: var(--reuse); }
 .decision-btn.decision-recycle:hover { border-color: var(--recycle); color: var(--recycle); }
 .decision-btn.decision-review:hover  { border-color: var(--review);  color: var(--review); }
+.decision-btn.decision-na:hover      { border-color: #94a3b8;        color: var(--text); }
 
 /* Submit button */
 .form-actions { margin-top: 24px; }
@@ -1527,7 +1529,7 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
   display: block; font-size: var(--text-xs); font-weight: var(--weight-bold);
   text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 8px;
 }
-.lbl-decision-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.lbl-decision-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 
 /* Color swatches */
 .lbl-swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
