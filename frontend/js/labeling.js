@@ -3,12 +3,12 @@
  *
  * Workflow (everything stays in the browser, nothing is uploaded):
  *   1. User loads a folder / set of image files.
- *   2. They step through each image tagging decision, color, and brand.
+ *   2. They step through each image tagging it Reuse or Recycle.
  *   3. On finish, JSZip builds a ZIP with every file renamed
- *      `shoe_{decision}_{color}_{brand}_{n}.{ext}` and the browser downloads it.
+ *      `shoe_{decision}_{n}.{ext}` and the browser downloads it.
  *
- * The counter {n} resets per unique decision+color+brand combination, so two
- * blue Nike reuse shoes become _1 and _2.
+ * The counter {n} resets per decision, so the first two reuse shoes become
+ * shoe_reuse_1 and shoe_reuse_2.
  */
 
 // ---------------------------------------------------------------------------
@@ -18,30 +18,6 @@
 const DECISIONS = [
     { key: "reuse",   label: "Reuse",   cls: "decision-reuse" },
     { key: "recycle", label: "Recycle", cls: "decision-recycle" },
-];
-
-// Display name → swatch color. `slug` is what goes in the filename.
-const COLORS = [
-    { name: "White",      slug: "white",      hex: "#ffffff" },
-    { name: "Black",      slug: "black",      hex: "#1a1a1a" },
-    { name: "Gray",       slug: "gray",       hex: "#9ca3af" },
-    { name: "Blue",       slug: "blue",       hex: "#2563eb" },
-    { name: "Red",        slug: "red",        hex: "#dc2626" },
-    { name: "Green",      slug: "green",      hex: "#16a34a" },
-    { name: "Yellow",     slug: "yellow",     hex: "#facc15" },
-    { name: "Orange",     slug: "orange",     hex: "#f97316" },
-    { name: "Pink",       slug: "pink",       hex: "#ec4899" },
-    { name: "Purple",     slug: "purple",     hex: "#9333ea" },
-    { name: "Brown",      slug: "brown",      hex: "#92400e" },
-    { name: "Beige",      slug: "beige",      hex: "#e7d3b3" },
-    { name: "Multicolor", slug: "multicolor", hex: "linear-gradient(135deg,#ef4444,#f59e0b,#10b981,#3b82f6,#a855f7)" },
-];
-
-// Predefined brands — mirrors backend/services/simulation.py. Custom brands the
-// user types are appended at runtime so they become reusable chips too.
-const BRANDS = [
-    "Nike", "Adidas", "Puma", "New Balance", "ASICS",
-    "Reebok", "Converse", "Vans", "Under Armour", "Skechers",
 ];
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|avif|gif|bmp|tiff?)$/i;
@@ -66,9 +42,8 @@ function isUsableImage(f) {
 // ---------------------------------------------------------------------------
 
 const state = {
-    items: [],          // { file, url, name, decision, color, brand }
+    items: [],          // { file, url, name, decision }
     index: 0,
-    brands: [...BRANDS],
     lastZip: null,      // { blob, filename } for re-download
 };
 
@@ -87,8 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "pick-folder-btn", "pick-files-btn",
         "progress-fill", "progress-count", "restart-btn",
         "viewer-img", "viewer-pos", "viewer-name", "prev-btn", "next-btn",
-        "decision-group", "color-group", "brand-group",
-        "custom-brand-wrap", "custom-brand-input", "custom-brand-add",
+        "decision-group",
         "name-preview", "apply-next-btn", "finish-btn",
         "done-sub", "redownload-btn", "label-more-btn",
     ].forEach(id => { el[camel(id)] = document.getElementById(id); });
@@ -165,8 +139,6 @@ function loadFiles(fileList) {
         url: URL.createObjectURL(file),
         name: file.name,
         decision: null,
-        color: null,
-        brand: null,
     }));
     state.index = 0;
     state.lastZip = null;
@@ -186,37 +158,10 @@ function buildStaticControls() {
     ).join("");
     el.decisionGroup.querySelectorAll("button").forEach(btn =>
         btn.addEventListener("click", () => setField("decision", btn.dataset.decision)));
-
-    // Color swatches
-    el.colorGroup.innerHTML = COLORS.map(c =>
-        `<button type="button" class="lbl-swatch" data-color="${c.slug}" title="${c.name}">
-           <span class="lbl-swatch-dot" style="background:${c.hex}"></span>
-           <span class="lbl-swatch-name">${c.name}</span>
-         </button>`
-    ).join("");
-    el.colorGroup.querySelectorAll("button").forEach(btn =>
-        btn.addEventListener("click", () => setField("color", btn.dataset.color)));
-
-    renderBrandChips();
-}
-
-function renderBrandChips() {
-    const chips = state.brands.map(b =>
-        `<button type="button" class="lbl-chip" data-brand="${escapeAttr(b)}">${escapeHtml(b)}</button>`
-    ).join("");
-    el.brandGroup.innerHTML = chips +
-        `<button type="button" class="lbl-chip lbl-chip-add" id="brand-add-chip">＋ Other</button>`;
-
-    el.brandGroup.querySelectorAll("[data-brand]").forEach(btn =>
-        btn.addEventListener("click", () => setField("brand", btn.dataset.brand)));
-    document.getElementById("brand-add-chip").addEventListener("click", () => {
-        el.customBrandWrap.hidden = !el.customBrandWrap.hidden;
-        if (!el.customBrandWrap.hidden) el.customBrandInput.focus();
-    });
 }
 
 // ---------------------------------------------------------------------------
-// Controls wiring (navigation, custom brand, finish)
+// Controls wiring (navigation, finish)
 // ---------------------------------------------------------------------------
 
 function wireControls() {
@@ -230,32 +175,12 @@ function wireControls() {
         if (state.lastZip) triggerDownload(state.lastZip.blob, state.lastZip.filename);
     });
 
-    el.customBrandAdd.addEventListener("click", addCustomBrand);
-    el.customBrandInput.addEventListener("keydown", e => {
-        if (e.key === "Enter") { e.preventDefault(); addCustomBrand(); }
-    });
-
     document.addEventListener("keydown", e => {
         if (el.labelStage.hidden) return;
-        const typing = document.activeElement === el.customBrandInput;
-        if (typing) return;
         if (e.key === "ArrowLeft")  { go(state.index - 1); }
         if (e.key === "ArrowRight") { go(state.index + 1); }
         if (e.key === "Enter" && !el.applyNextBtn.disabled && !el.applyNextBtn.hidden) advance();
     });
-}
-
-function addCustomBrand() {
-    const raw = el.customBrandInput.value.trim();
-    if (!raw) return;
-    // Reuse an existing brand if it matches case-insensitively.
-    const existing = state.brands.find(b => b.toLowerCase() === raw.toLowerCase());
-    const brand = existing || raw;
-    if (!existing) state.brands.push(brand);
-    el.customBrandInput.value = "";
-    el.customBrandWrap.hidden = true;
-    renderBrandChips();
-    setField("brand", brand);
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +209,7 @@ function advance() {
     finish();
 }
 
-function isLabeled(it) { return it.decision && it.color && it.brand; }
+function isLabeled(it) { return !!it.decision; }
 
 function render() {
     const it = current();
@@ -303,12 +228,8 @@ function renderControls() {
 
     el.decisionGroup.querySelectorAll("[data-decision]").forEach(b =>
         b.classList.toggle("selected", b.dataset.decision === it.decision));
-    el.colorGroup.querySelectorAll("[data-color]").forEach(b =>
-        b.classList.toggle("selected", b.dataset.color === it.color));
-    el.brandGroup.querySelectorAll("[data-brand]").forEach(b =>
-        b.classList.toggle("selected", b.dataset.brand === it.brand));
 
-    // Name preview (counter shown as N — resolved per combo on download)
+    // Name preview (counter shown as N — resolved per decision on download)
     el.namePreview.textContent = isLabeled(it) ? previewName(it) : "—";
 
     // Progress
@@ -326,7 +247,7 @@ function renderControls() {
 /** Filename preview for the current item (counter shown as a placeholder). */
 function previewName(it) {
     const ext = extOf(it.name);
-    return `shoe_${it.decision}_${it.color}_${slug(it.brand)}_N${ext}`;
+    return `shoe_${it.decision}_N${ext}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +257,7 @@ function previewName(it) {
 async function finish() {
     const unlabeled = state.items.filter(it => !isLabeled(it)).length;
     if (unlabeled > 0) {
-        alert(`${unlabeled} image(s) still need a decision, color, and brand.`);
+        alert(`${unlabeled} image(s) still need a Reuse or Recycle label.`);
         return;
     }
 
@@ -345,13 +266,12 @@ async function finish() {
 
     try {
         const zip = new JSZip();
-        const counters = new Map(); // combo key → count so far
+        const counters = new Map(); // decision → count so far
         const usedNames = new Set();
 
         for (const it of state.items) {
-            const combo = `${it.decision}_${it.color}_${slug(it.brand)}`;
-            const n = (counters.get(combo) || 0) + 1;
-            counters.set(combo, n);
+            const n = (counters.get(it.decision) || 0) + 1;
+            counters.set(it.decision, n);
 
             let name = buildName(it, "_", String(n));
             // Guard against any residual collision (e.g. odd extensions).
@@ -382,10 +302,10 @@ async function finish() {
     }
 }
 
-/** `shoe_{decision}_{color}_{brand}{sep}{n}{ext}` */
+/** `shoe_{decision}{sep}{n}{ext}` */
 function buildName(it, sep, n) {
     const ext = extOf(it.name);
-    return `shoe_${it.decision}_${it.color}_${slug(it.brand)}${sep}${n}${ext}`;
+    return `shoe_${it.decision}${sep}${n}${ext}`;
 }
 
 function triggerDownload(blob, filename) {
@@ -426,22 +346,8 @@ function revokeUrls() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Filename-safe slug: lowercase, spaces/punctuation → hyphen. */
-function slug(s) {
-    return String(s)
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "unknown";
-}
-
 /** Lowercased extension including the dot, or "" if none. */
 function extOf(filename) {
     const m = filename.match(/\.[a-z0-9]+$/i);
     return m ? m[0].toLowerCase() : "";
 }
-
-function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c =>
-        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-function escapeAttr(s) { return escapeHtml(s); }
