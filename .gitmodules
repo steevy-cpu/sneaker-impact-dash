@@ -1,0 +1,3 @@
+[submodule "sneaker_impact_training"]
+	path = sneaker_impact_training
+	url = https://github.com/steevy-cpu/sneaker_impact_training.git
