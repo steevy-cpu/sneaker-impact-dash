@@ -41,3 +41,41 @@ def generate_batch_id(conn: sqlite3.Connection) -> str:
 
     seq = (int(str(row["id"]).split("-")[-1]) + 1) if row else 1
     return f"{prefix}{seq:03d}"
+
+
+def generate_table_photo_id(conn: sqlite3.Connection) -> str:
+    """
+    Generate the next sequential table-photo ID for today.
+
+    Format: TBL-YYYYMMDD-NNNN
+    Example: TBL-20260604-0001
+    """
+    today = date.today().strftime("%Y%m%d")
+    prefix = f"TBL-{today}-"
+
+    row = conn.execute(
+        "SELECT id FROM table_photos WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+        (f"{prefix}%",),
+    ).fetchone()
+
+    seq = (int(str(row["id"]).split("-")[-1]) + 1) if row else 1
+    return f"{prefix}{seq:04d}"
+
+
+def generate_pair_id(conn: sqlite3.Connection) -> str:
+    """
+    Generate the next sequential pair ID for today.
+
+    Format: PAIR-YYYYMMDD-NNNN
+    Example: PAIR-20260604-0001
+    """
+    today = date.today().strftime("%Y%m%d")
+    prefix = f"PAIR-{today}-"
+
+    row = conn.execute(
+        "SELECT id FROM pairs WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+        (f"{prefix}%",),
+    ).fetchone()
+
+    seq = (int(str(row["id"]).split("-")[-1]) + 1) if row else 1
+    return f"{prefix}{seq:04d}"

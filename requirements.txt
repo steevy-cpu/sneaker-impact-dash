@@ -2,3 +2,4 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-dotenv>=1.0.0
 Pillow>=10.0.0
+python-multipart>=0.0.9   # required by FastAPI for multipart form / file uploads (/api/capture)

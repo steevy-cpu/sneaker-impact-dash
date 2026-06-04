@@ -28,6 +28,10 @@ MODEL_VERSION = os.getenv("MODEL_VERSION", "v1.0-sim")
 DB_PATH         = BASE_DIR / "sneakers.db"
 # Real shoe images — one folder per batch/shoe, served at /images/.
 IMAGES_DIR      = BASE_DIR / "images"
+# Whole-table photos (new flow) — served at /images/table_photos/<id>.jpg.
+TABLE_PHOTOS_DIR = IMAGES_DIR / "table_photos"
+# Cropped pair images (new flow) — served at /images/pairs/<id>.jpg.
+PAIRS_DIR        = IMAGES_DIR / "pairs"
 # Simulation placeholder images — 5 shared JPEGs, served at /sim_images/.
 SIM_IMAGES_DIR  = BASE_DIR / "simulation_assets" / "sample_images"
 # Frontend static files — HTML pages, CSS, JS, served at /frontend/.

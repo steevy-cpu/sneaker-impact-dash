@@ -91,11 +91,65 @@ def init_db():
             timestamp   TEXT    NOT NULL
         );
 
+        -- ----------------------------------------------------------------
+        -- table_photos: one whole-table photo + box metadata (new flow).
+        -- Photographed at the station, processed in the background into
+        -- per-pair rows (segment -> pair -> color -> brand -> model).
+        -- ----------------------------------------------------------------
+        CREATE TABLE IF NOT EXISTS table_photos (
+            id                   TEXT    PRIMARY KEY,   -- TBL-YYYYMMDD-NNNN
+            batch_id             TEXT,                  -- optional -> batches(id)
+            operator_id          TEXT,
+            image_path           TEXT,                  -- stored table photo (URL); null = metadata-only
+            barcode              TEXT,                  -- scanned/typed; may be a FedEx tracking #
+            weight_of_box        REAL,
+            total_good_sneakers  INTEGER NOT NULL DEFAULT 0,
+            total_end_of_life    INTEGER NOT NULL DEFAULT 0,
+            casuals              INTEGER NOT NULL DEFAULT 0,
+            status               TEXT    NOT NULL DEFAULT 'pending',  -- pending|processing|completed|failed
+            error_message        TEXT,
+            num_pairs            INTEGER NOT NULL DEFAULT 0,
+            shipment_info        TEXT,                  -- JSON: resolved partner/weight/address (P5)
+            created_at           TEXT    NOT NULL,
+            processed_at         TEXT,
+            FOREIGN KEY (batch_id) REFERENCES batches(id)
+        );
+
+        -- ----------------------------------------------------------------
+        -- pairs: one tied shoe pair detected within a table photo.
+        -- Mirrors the sneaker_impact_training pair JSON schema; the dash's
+        -- human-review workflow now applies at the pair level.
+        -- ----------------------------------------------------------------
+        CREATE TABLE IF NOT EXISTS pairs (
+            id                TEXT    PRIMARY KEY,       -- PAIR-YYYYMMDD-NNNN
+            table_photo_id    TEXT    NOT NULL,
+            image_path        TEXT,                      -- cropped pair image (URL)
+            bbox              TEXT,                      -- JSON [x1,y1,x2,y2] in the source photo
+            detected_color    TEXT,
+            color_confidence  REAL,
+            make              TEXT,
+            make_confidence   REAL,
+            model             TEXT,
+            model_confidence  REAL,
+            model_sources     TEXT,                      -- JSON list of source links
+            review_status     TEXT    NOT NULL DEFAULT 'NOT_REQUIRED',  -- NOT_REQUIRED|PENDING|COMPLETED
+            final_make        TEXT,                      -- human-confirmed overrides
+            final_model       TEXT,
+            notes             TEXT,
+            created_at        TEXT    NOT NULL,
+            FOREIGN KEY (table_photo_id) REFERENCES table_photos(id)
+        );
+
         -- Indexes for the most common query patterns
         CREATE INDEX IF NOT EXISTS idx_shoes_batch      ON shoes(batch_id);
         CREATE INDEX IF NOT EXISTS idx_shoes_timestamp  ON shoes(timestamp);
         CREATE INDEX IF NOT EXISTS idx_shoes_prediction ON shoes(ai_prediction);
         CREATE INDEX IF NOT EXISTS idx_shoes_review     ON shoes(review_status);
+
+        CREATE INDEX IF NOT EXISTS idx_table_photos_status  ON table_photos(status);
+        CREATE INDEX IF NOT EXISTS idx_table_photos_created ON table_photos(created_at);
+        CREATE INDEX IF NOT EXISTS idx_pairs_table_photo    ON pairs(table_photo_id);
+        CREATE INDEX IF NOT EXISTS idx_pairs_review         ON pairs(review_status);
     """)
 
     conn.commit()

@@ -27,3 +27,13 @@ def get_actual_image_paths(batch_id: str, shoe_id: str) -> dict:
         "img_angle_left":  f"{base}/angle_left.jpg",
         "img_angle_right": f"{base}/angle_right.jpg",
     }
+
+
+def get_table_photo_url(table_photo_id: str) -> str:
+    """URL for a stored whole-table photo (served by the /images mount)."""
+    return f"/images/table_photos/{table_photo_id}.jpg"
+
+
+def get_pair_url(pair_id: str) -> str:
+    """URL for a stored cropped pair image (served by the /images mount)."""
+    return f"/images/pairs/{pair_id}.jpg"

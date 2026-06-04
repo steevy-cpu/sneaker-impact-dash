@@ -17,14 +17,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.config import APP_MODE, IMAGES_DIR, SIM_IMAGES_DIR, FRONTEND_DIR
+from backend.config import (APP_MODE, IMAGES_DIR, SIM_IMAGES_DIR, FRONTEND_DIR,
+                            TABLE_PHOTOS_DIR, PAIRS_DIR)
 from backend.database import init_db, get_connection
-from backend.routes import analytics, batches, export, health, shoes, simulation
+from backend.routes import (analytics, batches, capture, export, health, pairs,
+                            shoes, simulation)
 
 # Directories must exist before app.mount() is called (mount happens at import time)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 SIM_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
+# New table-photo-flow image dirs (served under the existing /images mount)
+TABLE_PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+PAIRS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +120,8 @@ app.include_router(health.router)
 app.include_router(analytics.router)
 app.include_router(simulation.router)
 app.include_router(export.router)
+app.include_router(capture.router)   # new table-photo flow: /api/capture, /api/metadata, /api/table-photos
+app.include_router(pairs.router)     # new table-photo flow: /api/pairs
 
 
 # ---------------------------------------------------------------------------
