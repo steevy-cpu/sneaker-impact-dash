@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shoe Detail — Sneaker Impact</title>
+    <title>Capture — Sneaker Impact</title>
     <script src="js/theme.js"></script>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/components.css?v=6">
+    <link rel="stylesheet" href="css/components.css?v=7">
 </head>
 <body>
 <div class="layout">
@@ -14,14 +14,11 @@
     <!-- ── HEADER ─────────────────────────────────────────────── -->
     <header class="header">
         <div class="header-logo">
-            <img src="assets/Sneaker_impact_logo.avif"
-                 alt="Sneaker Impact"
-                 class="header-logo-img"
+            <img src="assets/Sneaker_impact_logo.avif" alt="Sneaker Impact" class="header-logo-img"
                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
             <span class="header-logo-text" style="display:none;">Sneaker<span>Impact</span></span>
         </div>
-        
-        <span class="header-title">Inspection Dashboard</span>
+        <span class="header-title">Capture Station</span>
         <div class="header-spacer"></div>
         <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme"><span id="theme-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span></button>
         <span class="mode-badge simulation" id="mode-badge">SIMULATION MODE</span>
@@ -31,7 +28,7 @@
     <nav class="sidebar">
         <div class="nav-section">
             <span class="nav-section-label">Operations</span>
-            <a href="capture.html" class="nav-link">
+            <a href="capture.html" class="nav-link active">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span> Capture
             </a>
         </div>
@@ -47,7 +44,7 @@
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span> Review Queue
             </a>
         </div>
-<div class="nav-section">
+        <div class="nav-section">
             <span class="nav-section-label">Tools</span>
             <a href="labeling.html" class="nav-link">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></span> Labeling
@@ -66,21 +63,96 @@
 
     <!-- ── MAIN ────────────────────────────────────────────────── -->
     <main class="main">
-        <!--
-            detail-root is entirely replaced by shoe_detail.js.
-            The back link, page header, image grid, result cards,
-            and metadata table are all rendered into this element.
-        -->
-        <div id="detail-root">
-            <div class="loading-state">Loading shoe record...</div>
+        <div class="page-header">
+            <h1 class="page-title">Capture Station</h1>
+            <p class="page-subtitle">Photograph the whole table of tied pairs, then enter box data.</p>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">Table Photo</span>
+                <span style="font-size:11px; color:var(--text-muted);" id="camera-label">Camera</span>
+            </div>
+            <div class="card-body">
+                <!-- Live camera preview (getUserMedia); frozen snapshot shown after capture -->
+                <div class="capture-stage" id="capture-stage">
+                    <video class="capture-video" id="capture-video" autoplay playsinline muted></video>
+                    <img class="capture-frozen" id="capture-frozen" alt="Captured table photo">
+                    <span class="capture-frozen-badge" id="frozen-badge" style="display:none;">CAPTURED</span>
+                    <div class="capture-stage-msg" id="stage-msg">Starting camera…</div>
+                </div>
+
+                <div class="capture-controls">
+                    <!-- Barcode field — mirrors the desktop "Barcode/Tracking Number" input -->
+                    <div class="capture-barcode-row">
+                        <label class="form-label" for="barcode-input">📦 Barcode / Tracking Number</label>
+                        <input class="form-input" id="barcode-input" type="text"
+                               placeholder="Auto-detected or manual entry…" autocomplete="off"
+                               inputmode="text" autofocus>
+                        <span class="capture-barcode-status" id="barcode-status">Ready for barcode scanning…</span>
+                    </div>
+
+                    <div class="capture-actions">
+                        <button class="btn-capture" id="capture-btn">🎥 Capture Table Photo</button>
+                        <button class="btn-secondary" id="upload-btn" type="button">Upload image…</button>
+                        <input type="file" id="file-input" accept="image/*" style="display:none;">
+                    </div>
+                    <div class="capture-hint">Press <strong>Space</strong> or <strong>Enter</strong> to capture · then enter box data</div>
+                </div>
+            </div>
         </div>
     </main>
 
 </div><!-- /.layout -->
 
+<!-- Hidden canvas used to grab a still frame from the video -->
+<canvas id="capture-canvas" style="display:none;"></canvas>
+
+<!-- ── BOX-DATA MODAL (mirrors the desktop BoxDataDialog) ───────── -->
+<div class="modal-overlay" id="boxdata-modal" role="dialog" aria-modal="true" aria-labelledby="boxdata-title">
+    <div class="modal">
+        <div class="modal-header" id="boxdata-title">📦 Enter Box Information</div>
+        <div class="modal-body">
+            <div class="box-grid">
+                <div class="box-field">
+                    <div class="box-field-label">⚖️ Weight (lbs)</div>
+                    <div class="box-field-desc">Total weight</div>
+                    <input class="form-input" id="bd-weight" type="number" min="0" max="999.9" step="0.1" value="0" inputmode="decimal">
+                </div>
+                <div class="box-field">
+                    <div class="box-field-label">✅ Good Sneakers</div>
+                    <div class="box-field-desc">Good condition</div>
+                    <input class="form-input" id="bd-good" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
+                </div>
+                <div class="box-field">
+                    <div class="box-field-label">💀 End of Life</div>
+                    <div class="box-field-desc">Cannot be used</div>
+                    <input class="form-input" id="bd-eol" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
+                </div>
+                <div class="box-field">
+                    <div class="box-field-label">👟 Casuals</div>
+                    <div class="box-field-desc">Casual shoes</div>
+                    <input class="form-input" id="bd-casuals" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
+                </div>
+            </div>
+
+            <div class="box-barcode-row">
+                <label class="form-label" for="bd-barcode">📦 Barcode / Tracking Number</label>
+                <input class="form-input" id="bd-barcode" type="text" placeholder="(optional)" autocomplete="off">
+            </div>
+
+            <div class="form-error" id="bd-error" style="display:none;"></div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-danger" id="bd-cancel" type="button">❌ Cancel</button>
+            <button class="btn-success" id="bd-confirm" type="button">✅ Confirm &amp; Capture</button>
+        </div>
+    </div>
+</div>
+
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=6"></script>
+<script src="js/api.js?v=7"></script>
 <script src="js/utils.js"></script>
-<script src="js/shoe_detail.js"></script>
+<script src="js/capture.js?v=1"></script>
 </body>
 </html>

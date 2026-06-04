@@ -30,6 +30,25 @@ async function apiFetch(path, options = {}) {
     return res.json();
 }
 
+/**
+ * Multipart upload (FormData) — does NOT set Content-Type so the browser adds
+ * the correct multipart boundary. Same error shaping as apiFetch().
+ */
+async function apiUpload(path, formData) {
+    const res = await fetch(path, { method: "POST", body: formData });
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        let message;
+        if (Array.isArray(body.detail)) {
+            message = body.detail.map(e => e.msg || JSON.stringify(e)).join("; ");
+        } else {
+            message = body.detail || `Server error ${res.status}`;
+        }
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 const api = {
     /**
      * List shoes with optional filters and pagination.
@@ -136,5 +155,36 @@ const api = {
     /** Per-brand inspection counts and review rates (analytics page). */
     getBrandDistribution() {
         return apiFetch("/api/analytics/brand-distribution");
+    },
+
+    /* ---- Table-photo capture flow (new operator workflow) ---------------- */
+
+    /**
+     * Upload one whole-table photo + box metadata (multipart).
+     * @param {FormData} formData - image + barcode + box counts + operator_id
+     */
+    captureTablePhoto(formData) {
+        return apiUpload("/api/capture", formData);
+    },
+
+    /** Fast-track box metadata without an image (mirrors ShoeSort /api/metadata). */
+    createMetadata(data) {
+        return apiFetch("/api/metadata", { method: "POST", body: JSON.stringify(data) });
+    },
+
+    /** List table photos (optional filters: page, page_size, status, batch_id). */
+    getTablePhotos(params = {}) {
+        const qs = new URLSearchParams(params).toString();
+        return apiFetch(`/api/table-photos${qs ? "?" + qs : ""}`);
+    },
+
+    /** One table photo + its pairs. */
+    getTablePhoto(id) {
+        return apiFetch(`/api/table-photos/${encodeURIComponent(id)}`);
+    },
+
+    /** Lightweight processing status for polling. */
+    getTablePhotoStatus(id) {
+        return apiFetch(`/api/table-photos/${encodeURIComponent(id)}/status`);
     },
 };

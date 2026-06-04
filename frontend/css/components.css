@@ -1591,3 +1591,116 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
 /* Dark-mode tweaks -------------------------------------------------------- */
 [data-theme="dark"] .lbl-swatch-dot { border-color: rgba(255,255,255,0.18); }
 [data-theme="dark"] .btn-secondary:hover { background: #22304a; }
+
+/* ========================================================================
+   Capture station (P2) — operator capture page, box-data modal, toasts.
+   Mirrors the PyQt desktop client's capture flow on the web.
+   ======================================================================== */
+
+/* Generic text/number input (matches .form-select / .form-textarea styling) */
+.form-input {
+  width: 100%; padding: 10px 12px; font-size: var(--text-md); font-family: inherit;
+  color: var(--text); background: var(--card-bg);
+  border: 1.5px solid var(--border); border-radius: var(--radius-md);
+  transition: border-color var(--t) var(--ease);
+}
+.form-input:focus { outline: none; border-color: var(--primary); }
+.form-input::placeholder { color: var(--text-light); }
+
+/* --- Capture stage (live camera / frozen preview) ----------------------- */
+.capture-stage {
+  position: relative; width: 100%; max-width: 760px; margin: 0 auto;
+  aspect-ratio: 4 / 3; background: #0b1220; border-radius: var(--radius-lg);
+  overflow: hidden; border: 1.5px solid var(--border); box-shadow: var(--shadow-sm);
+  display: flex; align-items: center; justify-content: center;
+}
+.capture-video, .capture-frozen {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+}
+.capture-frozen { display: none; }
+.capture-stage.frozen .capture-video { display: none; }
+.capture-stage.frozen .capture-frozen { display: block; }
+.capture-stage-msg {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 24px; color: #cbd5e1; font-size: var(--text-sm); line-height: 1.5;
+}
+.capture-frozen-badge {
+  position: absolute; top: 12px; left: 12px; background: rgba(8,166,194,0.92); color: #fff;
+  font-size: var(--text-xs); font-weight: var(--weight-bold); padding: 4px 10px;
+  border-radius: var(--radius-full); letter-spacing: .03em;
+}
+
+/* --- Capture controls bar (barcode + big green button) ------------------ */
+.capture-controls { max-width: 760px; margin: 18px auto 0; display: flex; flex-direction: column; gap: 14px; }
+.capture-barcode-row { display: flex; flex-direction: column; gap: 6px; }
+.capture-barcode-status { font-size: var(--text-xs); color: var(--text-muted); min-height: 14px; }
+.capture-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* The prominent green "capture" button — desktop parity (large, green). */
+.btn-capture {
+  flex: 1 1 auto; min-width: 240px; padding: 18px 24px;
+  font-size: var(--text-lg); font-weight: var(--weight-bold);
+  color: #fff; background: var(--reuse); border: none; border-radius: var(--radius-lg);
+  cursor: pointer; letter-spacing: .02em; transition: background var(--t) var(--ease), transform var(--t) var(--ease);
+}
+.btn-capture:hover  { background: #15803d; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(22,163,74,0.38); }
+.btn-capture:active { transform: translateY(0); }
+.btn-capture:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
+.capture-hint { text-align: center; font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+
+/* --- Modal / overlay ----------------------------------------------------- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(15,23,42,0.55); backdrop-filter: blur(2px);
+  display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  width: 100%; max-width: 720px; background: var(--card-bg); border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg); border: 1.5px solid var(--border); overflow: hidden;
+  animation: modal-pop .16s var(--ease);
+}
+@keyframes modal-pop { from { opacity: 0; transform: translateY(8px) scale(.99); } to { opacity: 1; transform: none; } }
+.modal-header {
+  padding: 18px 24px; font-size: var(--text-lg); font-weight: var(--weight-bold);
+  border-bottom: 1px solid var(--border-light);
+}
+.modal-body { padding: 22px 24px; }
+.modal-actions { display: flex; gap: 12px; justify-content: flex-end; padding: 16px 24px 22px; }
+
+/* --- Box-data field grid (mirrors the 4 desktop spinboxes) -------------- */
+.box-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+}
+.box-field {
+  border: 1.5px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px;
+  background: var(--bg);
+}
+.box-field-label { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.box-field-desc { font-size: var(--text-xs); color: var(--text-muted); margin: 2px 0 8px; }
+.box-field .form-input { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.box-barcode-row { margin-top: 14px; }
+.box-barcode-row .form-label { display: block; margin-bottom: 6px; }
+.modal .form-error { margin-top: 14px; }
+
+/* Cancel (red) / Confirm (green) — desktop parity. */
+.btn-danger { background: var(--error); color: #fff; border: none; }
+.btn-danger:hover { background: var(--error-dark); transform: translateY(-1px); }
+
+/* --- Toast banners ------------------------------------------------------- */
+.toast-container {
+  position: fixed; top: calc(var(--header-h, 56px) + 14px); left: 50%; transform: translateX(-50%);
+  z-index: 1100; display: flex; flex-direction: column; gap: 10px; align-items: center; pointer-events: none;
+}
+.toast {
+  min-width: 240px; max-width: 90vw; padding: 12px 22px; border-radius: var(--radius-full);
+  color: #fff; font-size: var(--text-sm); font-weight: var(--weight-semibold); text-align: center;
+  box-shadow: var(--shadow-md); opacity: 0; transform: translateY(-10px);
+  transition: opacity .2s var(--ease), transform .2s var(--ease);
+}
+.toast-show { opacity: 1; transform: none; }
+.toast-success { background: #16a34a; }
+.toast-info    { background: #2980b9; }
+.toast-error   { background: #dc2626; }
+.toast-barcode { background: #8e44ad; }
+
+@media (max-width: 560px) { .box-grid { grid-template-columns: 1fr; } }

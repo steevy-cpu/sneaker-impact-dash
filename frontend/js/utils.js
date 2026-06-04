@@ -128,3 +128,34 @@ function showError(container, message) {
 function showEmpty(container, message) {
     container.innerHTML = `<div class="empty-state">${message}</div>`;
 }
+
+/* ----------------------------------------------------------------
+   Toast banners — mirror the desktop client's status banners
+   (barcode scanned / capture started / queued / errors).
+   ---------------------------------------------------------------- */
+
+/**
+ * Show a transient toast banner near the top of the screen.
+ * @param {string} message
+ * @param {"success"|"info"|"error"|"barcode"} [type="info"]
+ * @param {number} [duration=2200] - ms before auto-dismiss
+ */
+function showToast(message, type = "info", duration = 2200) {
+    let container = document.getElementById("toast-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "toast-container";
+        container.className = "toast-container";
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    // force reflow so the entrance transition runs
+    requestAnimationFrame(() => toast.classList.add("toast-show"));
+    setTimeout(() => {
+        toast.classList.remove("toast-show");
+        setTimeout(() => toast.remove(), 250);
+    }, duration);
+}
