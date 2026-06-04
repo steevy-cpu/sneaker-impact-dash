@@ -36,3 +36,22 @@ PAIRS_DIR        = IMAGES_DIR / "pairs"
 SIM_IMAGES_DIR  = BASE_DIR / "simulation_assets" / "sample_images"
 # Frontend static files — HTML pages, CSS, JS, served at /frontend/.
 FRONTEND_DIR    = BASE_DIR / "frontend"
+
+# --- Local identification engine (sneaker_impact_training submodule) --------
+# The background worker (P3) runs the pipeline (segment -> pair -> color ->
+# brand -> model) in a SUBPROCESS using the SYSTEM python that has the GPU torch
+# stack + ultralytics + CLIP. The dash venv stays lightweight; see backend/services.
+ENGINE_ENABLED    = os.getenv("ENGINE_ENABLED", "1") not in ("0", "false", "False")
+ENGINE_DIR        = BASE_DIR / "sneaker_impact_training"            # the submodule
+ENGINE_RUNNER     = Path(os.getenv("ENGINE_RUNNER", BASE_DIR / "backend" / "services" / "engine_runner.py"))
+# System Python with torch(cu128)+ultralytics+clip — NOT the dash venv.
+ENGINE_PYTHON       = os.getenv("ENGINE_PYTHON", "/usr/bin/python3")
+# Segmentation weights — must be auto-downloadable by the installed ultralytics
+# (8.3.x → the YOLO11-based "yoloe-11s-seg.pt"; the engine's own default
+# "yoloe-26s-seg.pt" needs a newer ultralytics / a pre-placed weight).
+ENGINE_SEGMENT_MODEL = os.getenv("ENGINE_SEGMENT_MODEL", "yoloe-11s-seg.pt")
+ENGINE_OLLAMA_MODEL = os.getenv("ENGINE_OLLAMA_MODEL", "qwen2.5vl:32b")
+ENGINE_OLLAMA_URL   = os.getenv("ENGINE_OLLAMA_URL", "http://localhost:11434")
+ENGINE_MODEL_TIMEOUT = int(os.getenv("ENGINE_MODEL_TIMEOUT", "240"))  # per-pair VLM call
+ENGINE_JOB_TIMEOUT   = int(os.getenv("ENGINE_JOB_TIMEOUT", "1800"))   # per whole photo
+ENGINE_POLL_SECONDS  = float(os.getenv("ENGINE_POLL_SECONDS", "3"))   # worker poll interval

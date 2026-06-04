@@ -53,8 +53,13 @@ async def lifespan(app: FastAPI):
         seed_database(conn)
         conn.close()
 
+    # 3. Start the background engine worker (drains 'pending' table photos)
+    from backend.services.jobqueue import worker
+    worker.start()
+
     yield  # --- app is live here ---
 
+    worker.stop()
     print("\nShutting down cleanly.")
 
 

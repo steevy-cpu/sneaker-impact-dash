@@ -21,7 +21,7 @@ from typing import Optional
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      UploadFile)
 
-from backend.config import TABLE_PHOTOS_DIR
+from backend.config import IMAGES_DIR, TABLE_PHOTOS_DIR
 from backend.database import get_db
 from backend.models import MetadataCreate
 from backend.routes.pairs import pair_to_dict
@@ -211,3 +211,37 @@ def get_table_photo_status(tp_id: str, conn: sqlite3.Connection = Depends(get_db
         "error_message": row["error_message"],
         "processed_at":  row["processed_at"],
     }
+
+
+@router.post("/table-photos/{tp_id}/reprocess", status_code=202,
+             summary="Re-queue a table photo for background processing")
+def reprocess_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)):
+    """Reset a completed/failed table photo back to `pending` so the worker
+    re-runs it. Deletes its existing pairs (+ crop files) first to avoid dupes."""
+    row = conn.execute(
+        "SELECT id, image_path FROM table_photos WHERE id = ?", (tp_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Table photo '{tp_id}' not found")
+    if not row["image_path"]:
+        raise HTTPException(status_code=400, detail="No image to process for this record")
+
+    old = conn.execute(
+        "SELECT image_path FROM pairs WHERE table_photo_id = ?", (tp_id,)
+    ).fetchall()
+    conn.execute("DELETE FROM pairs WHERE table_photo_id = ?", (tp_id,))
+    conn.execute(
+        "UPDATE table_photos SET status = 'pending', error_message = NULL, "
+        "num_pairs = 0, processed_at = NULL WHERE id = ?",
+        (tp_id,),
+    )
+    conn.commit()
+
+    # Best-effort cleanup of old crop files.
+    for p in old:
+        if p["image_path"]:
+            try:
+                (IMAGES_DIR / p["image_path"].replace("/images/", "", 1)).unlink()
+            except OSError:
+                pass
+    return {"id": tp_id, "status": "pending"}
