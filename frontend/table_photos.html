@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Config — Sneaker Impact</title>
+    <title>Table Photos — Sneaker Impact</title>
     <script src="js/theme.js"></script>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/components.css?v=9">
+    <link rel="stylesheet" href="css/components.css?v=10">
 </head>
 <body>
 <div class="layout">
@@ -17,7 +17,7 @@
                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
             <span class="header-logo-text" style="display:none;">Sneaker<span>Impact</span></span>
         </div>
-        <span class="header-title">Station Config</span>
+        <span class="header-title">Table Photos</span>
         <div class="header-spacer"></div>
         <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme"><span id="theme-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span></button>
         <span class="mode-badge simulation" id="mode-badge">SIMULATION MODE</span>
@@ -29,7 +29,7 @@
             <a href="capture.html" class="nav-link">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span> Capture
             </a>
-            <a href="table_photos.html" class="nav-link">
+            <a href="table_photos.html" class="nav-link active">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></span> Table Photos
             </a>
             <a href="pairs_review.html" class="nav-link">
@@ -45,7 +45,7 @@
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Live Feed
             </a>
             <a href="review_queue.html" class="nav-link">
-                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span> Review Queue
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/></svg></span> Review Queue
             </a>
         </div>
         <div class="nav-section">
@@ -65,59 +65,43 @@
         </div>
         <div class="nav-section">
             <span class="nav-section-label">Settings</span>
-            <a href="config.html" class="nav-link active">
-                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span> Config
+            <a href="config.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> Config
             </a>
         </div>
     </nav>
 
     <main class="main">
         <div class="page-header">
-            <h1 class="page-title">Station Config</h1>
-            <p class="page-subtitle">Adjust the station camera and review integrations. Camera changes apply to the real device on the station box.</p>
+            <h1 class="page-title">Table Photos</h1>
+            <p class="page-subtitle">Every captured table photo, its box data, processing status, and detected pairs.</p>
         </div>
-
-        <!-- Camera control -->
         <div class="card">
             <div class="card-header">
-                <span class="card-title">Camera</span>
-                <button class="btn-secondary" id="cam-refresh" type="button" style="padding:5px 12px;">Refresh</button>
+                <span class="card-title">Captured photos</span>
+                <button class="btn-secondary" id="refresh-btn" type="button" style="padding:5px 12px;">Refresh</button>
             </div>
-            <div class="card-body">
-                <div class="cfg-row">
-                    <label class="form-label" for="cam-device">Device</label>
-                    <select class="form-select" id="cam-device"></select>
-                </div>
-                <div class="cfg-row">
-                    <label class="form-label" for="cam-resolution">Capture resolution</label>
-                    <select class="form-select" id="cam-resolution"></select>
-                </div>
-                <div id="cam-controls"><div class="loading-state">Loading camera…</div></div>
-                <div class="cfg-actions">
-                    <button class="btn-secondary" id="cam-reset" type="button">Reset to defaults</button>
-                    <button class="btn-success" id="cfg-save" type="button">Save station settings</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Integrations status -->
-        <div class="card">
-            <div class="card-header"><span class="card-title">Integrations</span></div>
-            <div class="card-body">
-                <div id="integrations"><div class="loading-state">Loading…</div></div>
-                <p class="text-muted text-xs" style="margin-top:10px;">
-                    Airtable credentials are set in <code>.env</code> (server-side) for security, then restart.
-                    This panel only shows whether they're configured.
-                </p>
-            </div>
+            <div id="tp-container"><div class="loading-state">Loading…</div></div>
         </div>
     </main>
 
 </div><!-- /.layout -->
 
+<!-- Detail modal -->
+<div class="modal-overlay" id="tp-modal" role="dialog" aria-modal="true">
+    <div class="modal" style="max-width:880px;">
+        <div class="modal-header" id="tp-modal-title">Table Photo</div>
+        <div class="modal-body" id="tp-modal-body"></div>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="tp-reprocess" type="button">Reprocess</button>
+            <button class="btn-success" id="tp-close" type="button">Close</button>
+        </div>
+    </div>
+</div>
+
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=9"></script>
+<script src="js/api.js?v=10"></script>
 <script src="js/utils.js"></script>
-<script src="js/config.js?v=1"></script>
+<script src="js/table_photos.js?v=1"></script>
 </body>
 </html>
