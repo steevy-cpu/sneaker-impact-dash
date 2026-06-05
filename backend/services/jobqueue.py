@@ -62,7 +62,7 @@ class EngineWorker:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT id, image_path FROM table_photos "
+                "SELECT id, image_path, barcode FROM table_photos "
                 "WHERE status = 'pending' AND image_path IS NOT NULL "
                 "ORDER BY created_at LIMIT 1"
             ).fetchone()
@@ -76,7 +76,8 @@ class EngineWorker:
             conn.commit()
             if cur.rowcount == 0:
                 return None   # claimed by someone else between SELECT and UPDATE
-            return {"id": row["id"], "image_path": row["image_path"]}
+            return {"id": row["id"], "image_path": row["image_path"],
+                    "barcode": row["barcode"]}
         finally:
             conn.close()
 
@@ -137,6 +138,19 @@ class EngineWorker:
             conn.commit()
             print(f"[worker] {tp_id}: {len(pairs)} pair(s) "
                   f"({approved} auto-approved) -> completed.")
+
+            # Stage 2 outbound sync (best-effort, isolated so it can never flip
+            # the job to 'failed'): brand summary -> Airtable. No-op unless creds set.
+            try:
+                from backend.services.airtable_sync import (get_airtable_sync,
+                                                            sync_enabled,
+                                                            brand_summary_from_pairs)
+                if sync_enabled() and job.get("barcode"):
+                    summary = brand_summary_from_pairs(pairs)
+                    if summary:
+                        get_airtable_sync().sync_brand_summary(job["barcode"], summary)
+            except Exception as exc:                   # noqa: BLE001 - never affect status
+                print(f"[worker] airtable brand-summary sync error: {exc}")
         except Exception as exc:                       # noqa: BLE001 - never crash worker
             try:
                 conn.rollback()

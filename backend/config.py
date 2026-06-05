@@ -79,3 +79,7 @@ AIRTABLE_API_KEY         = os.getenv("AIRTABLE_API_KEY", "")
 AIRTABLE_BASE_ID         = os.getenv("AIRTABLE_BASE_ID", "")
 AIRTABLE_SHIPMENTS_TABLE = os.getenv("AIRTABLE_SHIPMENTS_TABLE", "Shipments Received")
 AIRTABLE_PARTNERS_TABLE  = os.getenv("AIRTABLE_PARTNERS_TABLE", "Partners")
+# Outbound 2-stage write sync (dash -> Airtable: box metadata on capture, brand
+# summary on completion). Dormant until AIRTABLE_API_KEY + AIRTABLE_BASE_ID are
+# set (then auto-activates on restart). Set to 0 to keep reads but disable writes.
+AIRTABLE_SYNC_ENABLED = os.getenv("AIRTABLE_SYNC_ENABLED", "1") not in ("0", "false", "False")
