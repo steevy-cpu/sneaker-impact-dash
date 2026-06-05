@@ -21,7 +21,7 @@ from backend.config import (APP_MODE, IMAGES_DIR, SIM_IMAGES_DIR, FRONTEND_DIR,
                             TABLE_PHOTOS_DIR, PAIRS_DIR)
 from backend.database import init_db, get_connection
 from backend.routes import (analytics, batches, capture, export, health, pairs,
-                            shoes, simulation)
+                            shipment, shoes, simulation)
 
 # Directories must exist before app.mount() is called (mount happens at import time)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -127,6 +127,7 @@ app.include_router(simulation.router)
 app.include_router(export.router)
 app.include_router(capture.router)   # new table-photo flow: /api/capture, /api/metadata, /api/table-photos
 app.include_router(pairs.router)     # new table-photo flow: /api/pairs
+app.include_router(shipment.router)  # barcode -> shipment lookup: /api/shipment/{barcode}
 
 
 # ---------------------------------------------------------------------------

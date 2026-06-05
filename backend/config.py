@@ -65,3 +65,17 @@ AUTO_APPROVE_CONF = float(os.getenv("AUTO_APPROVE_CONF", "0.80"))
 # auto-approved pairs are copied into — feeds the engine's catalog/training.
 # Defaults into the engine submodule's label_data dir.
 LABEL_DATA_DIR = Path(os.getenv("LABEL_DATA_DIR", str(ENGINE_DIR / "label_data")))
+
+# --- Shipment lookup (barcode -> shipment/order info) -----------------------
+# Pluggable: resolve a scanned barcode (often a FedEx tracking #) to its
+# shipment record. "airtable" matches against the company's Airtable (populated
+# from FedEx invoice exports); "fedex" is a stub for a future live Track API.
+# Comma-separated order = lookup priority (first hit wins). Env-only, no
+# credentials are committed — stays unconfigured (fail-safe) until you set them.
+SHIPMENT_LOOKUP_SOURCES  = os.getenv("SHIPMENT_LOOKUP_SOURCES", "airtable")
+SHIPMENT_CACHE_TTL       = int(os.getenv("SHIPMENT_CACHE_TTL", "300"))   # seconds
+SHIPMENT_BARCODE_TRIM    = int(os.getenv("SHIPMENT_BARCODE_TRIM", "12")) # match last N digits; 0 = full
+AIRTABLE_API_KEY         = os.getenv("AIRTABLE_API_KEY", "")
+AIRTABLE_BASE_ID         = os.getenv("AIRTABLE_BASE_ID", "")
+AIRTABLE_SHIPMENTS_TABLE = os.getenv("AIRTABLE_SHIPMENTS_TABLE", "Shipments Received")
+AIRTABLE_PARTNERS_TABLE  = os.getenv("AIRTABLE_PARTNERS_TABLE", "Partners")

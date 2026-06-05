@@ -75,6 +75,22 @@ def _insert_table_photo(conn, tp_id, *, operator_id, batch_id, image_path,
     conn.commit()
 
 
+def _attach_shipment(conn, tp_id, barcode):
+    """Best-effort: resolve the barcode and store shipment_info on the row.
+    Fail-safe — never blocks capture (returns silently if unconfigured)."""
+    if not barcode:
+        return
+    try:
+        from backend.services.shipment_lookup import get_shipment_lookup
+        info = get_shipment_lookup().resolve(barcode)
+        if info and info.get("found"):
+            conn.execute("UPDATE table_photos SET shipment_info = ? WHERE id = ?",
+                         (json.dumps(info), tp_id))
+            conn.commit()
+    except Exception as exc:                           # noqa: BLE001 - never block capture
+        print(f"[capture] shipment attach failed: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------
@@ -96,6 +112,7 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
         image_path=None, barcode=data.barcode, weight=data.weight_of_box,
         good=data.total_good_sneakers, eol=data.total_end_of_life, casuals=data.casuals,
     )
+    _attach_shipment(conn, tp_id, data.barcode)
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
     return table_photo_to_dict(row)
 
@@ -146,6 +163,7 @@ async def capture(
         image_path=get_table_photo_url(tp_id), barcode=barcode, weight=weight_of_box,
         good=total_good_sneakers, eol=total_end_of_life, casuals=casuals,
     )
+    _attach_shipment(conn, tp_id, barcode)
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
     return table_photo_to_dict(row)
 

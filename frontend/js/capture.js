@@ -27,6 +27,7 @@
 
     const barcodeInput  = document.getElementById("barcode-input");
     const barcodeStatus = document.getElementById("barcode-status");
+    const shipmentPreview = document.getElementById("shipment-preview");
     const captureBtn = document.getElementById("capture-btn");
     const uploadBtn  = document.getElementById("upload-btn");
     const fileInput  = document.getElementById("file-input");
@@ -195,6 +196,34 @@
     // USB scanners type fast and end with Enter. We accept Enter as "scanned"
     // and also reflect manual edits in the status line.
 
+    let lastLookup = "";
+
+    async function lookupShipment(code) {
+        if (!code || code.length < 4 || code === lastLookup) return;
+        lastLookup = code;
+        shipmentPreview.style.display = "";
+        shipmentPreview.className = "shipment-preview shipment-preview--loading";
+        shipmentPreview.textContent = "Looking up shipment…";
+        try {
+            const s = await api.getShipment(code);
+            if (s.found) {
+                const bits = [];
+                if (s.partner) bits.push("📦 " + s.partner);
+                if (s.weight != null) bits.push(s.weight + " lbs");
+                if (s.status) bits.push(s.status);
+                shipmentPreview.className = "shipment-preview shipment-preview--found";
+                shipmentPreview.textContent = "Shipment: " + (bits.join(" · ") || "matched");
+            } else if (s.configured === false) {
+                shipmentPreview.style.display = "none";   // lookup not set up — stay quiet
+            } else {
+                shipmentPreview.className = "shipment-preview shipment-preview--none";
+                shipmentPreview.textContent = "No shipment match for this barcode";
+            }
+        } catch (err) {
+            shipmentPreview.style.display = "none";        // fail-safe: never nag
+        }
+    }
+
     barcodeInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
             e.preventDefault();
@@ -202,6 +231,7 @@
             if (code.length >= 4) {
                 barcodeStatus.textContent = "Scanned: " + code;
                 showToast("BARCODE SCANNED: " + code, "barcode", 1800);
+                lookupShipment(code);
             } else {
                 barcodeStatus.textContent = "Barcode too short (min 4 chars)";
             }
@@ -210,7 +240,9 @@
     barcodeInput.addEventListener("input", () => {
         const code = barcodeInput.value.trim();
         barcodeStatus.textContent = code ? "Barcode: " + code : "Ready for barcode scanning…";
+        if (!code) { shipmentPreview.style.display = "none"; lastLookup = ""; }
     });
+    barcodeInput.addEventListener("blur", () => lookupShipment(barcodeInput.value.trim()));
 
     /* ---- Wiring --------------------------------------------------------- */
 

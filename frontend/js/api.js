@@ -204,6 +204,11 @@ const api = {
         return apiFetch(`/api/pairs/${encodeURIComponent(id)}`);
     },
 
+    /** Resolve a scanned barcode to shipment/order info (Airtable now). */
+    getShipment(barcode) {
+        return apiFetch(`/api/shipment/${encodeURIComponent(barcode)}`);
+    },
+
     /**
      * Human confirm/override a pair.
      * @param {string} id
