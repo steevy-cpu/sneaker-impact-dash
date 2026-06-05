@@ -37,6 +37,18 @@ SIM_IMAGES_DIR  = BASE_DIR / "simulation_assets" / "sample_images"
 # Frontend static files — HTML pages, CSS, JS, served at /frontend/.
 FRONTEND_DIR    = BASE_DIR / "frontend"
 
+# --- Camera control (v4l2) --------------------------------------------------
+# In the split deployment the camera lives on the Ubuntu station, NOT on the
+# dash server, so v4l2-ctl must run there over SSH. Set CAMERA_HOST to an ssh
+# target (e.g. "camerapc1@192.168.1.170", needs passwordless key auth from the
+# server) to control the station's camera remotely; leave blank to control a
+# camera attached to THIS machine.
+CAMERA_HOST     = os.getenv("CAMERA_HOST", "")
+CAMERA_SSH_OPTS = os.getenv(
+    "CAMERA_SSH_OPTS",
+    "-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new",
+)
+
 # --- Local identification engine (sneaker_impact_training submodule) --------
 # The background worker (P3) runs the pipeline (segment -> pair -> color ->
 # brand -> model) in a SUBPROCESS using the SYSTEM python that has the GPU torch

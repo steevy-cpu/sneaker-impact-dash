@@ -1,19 +1,23 @@
 """
-camera_control.py — control the station's USB camera via v4l2 (server-side).
+camera_control.py — control the station's USB camera via v4l2.
 
-The camera is physically on the Ubuntu station box, so we adjust it at the OS
-level with `v4l2-ctl` (same thing operators do over RustDesk today): list
+The camera is physically on the Ubuntu station box. In the split deployment the
+dash server runs on a DIFFERENT machine, so v4l2-ctl is executed ON THE STATION
+over SSH (set CAMERA_HOST). With CAMERA_HOST blank we fall back to running
+v4l2-ctl locally (camera attached to this machine). Either way we can list
 devices, read/set hardware controls (brightness, focus, zoom, white balance,
-exposure, …) and list supported resolutions. Changes hit the real device, so
-they affect the actual captured photos.
+exposure, …) and list supported resolutions; changes hit the real device.
 
-Fully fail-safe: if v4l2-ctl is missing or no camera is attached, every call
-returns an empty/`None` result with `available=False` — nothing raises.
-Stdlib only (subprocess).
+Fully fail-safe: if neither a remote host nor a local v4l2-ctl is available, or
+no camera is attached, every call returns an empty/`None` result with
+`available=False` — nothing raises. Stdlib only (subprocess + shlex).
 """
 import re
+import shlex
 import shutil
 import subprocess
+
+from backend.config import CAMERA_HOST, CAMERA_SSH_OPTS
 
 _V4L2 = shutil.which("v4l2-ctl")
 
@@ -25,16 +29,32 @@ _MENU_ITEM_RE = re.compile(r"^\s+(\d+):\s*(.+)$")
 _SIZE_RE = re.compile(r"Size:\s*Discrete\s+(\d+)x(\d+)")
 
 
+def _remote_host():
+    """The ssh target for the station's camera, or None to run locally."""
+    return CAMERA_HOST or None
+
+
 def available():
-    return _V4L2 is not None
+    # Remote: the camera is on the station — assume v4l2-ctl is installed there
+    # (verified at deploy). Local: only if v4l2-ctl is installed on this box.
+    return bool(_remote_host()) or _V4L2 is not None
 
 
-def _run(args, timeout=5):
-    """Run v4l2-ctl with args; return stdout (str) or None on any failure."""
-    if not _V4L2:
-        return None
+def _run(args, timeout=8):
+    """Run `v4l2-ctl <args>` — on the station over SSH when CAMERA_HOST is set,
+    else locally. Returns stdout (str) or None on any failure."""
+    host = _remote_host()
+    if host:
+        # Build a single remote command string; args are quoted so device paths
+        # and control names can't break out of the v4l2-ctl invocation.
+        remote_cmd = "v4l2-ctl " + " ".join(shlex.quote(str(a)) for a in args)
+        cmd = ["ssh", *shlex.split(CAMERA_SSH_OPTS), host, remote_cmd]
+    else:
+        if not _V4L2:
+            return None
+        cmd = [_V4L2, *[str(a) for a in args]]
     try:
-        proc = subprocess.run([_V4L2, *args], capture_output=True, text=True,
+        proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=timeout)
         if proc.returncode != 0:
             return None

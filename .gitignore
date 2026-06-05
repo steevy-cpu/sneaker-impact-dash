@@ -65,3 +65,6 @@ sneaker_impact_*.csv
 
 # ── Images uploaded by actual mode (not checked in) ───────────────
 images/
+
+# TLS certs (self-signed, includes a private key) — never commit
+certs/

@@ -3,30 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review Queue — Sneaker Impact</title>
+    <title>Label Data — Sneaker Impact</title>
     <script src="js/theme.js"></script>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/components.css?v=6">
+    <link rel="stylesheet" href="css/components.css?v=11">
 </head>
 <body>
 <div class="layout">
 
-    <!-- ── HEADER ─────────────────────────────────────────────── -->
     <header class="header">
         <div class="header-logo">
-            <img src="assets/Sneaker_impact_logo.avif"
-                 alt="Sneaker Impact"
-                 class="header-logo-img"
+            <img src="assets/Sneaker_impact_logo.avif" alt="Sneaker Impact" class="header-logo-img"
                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
             <span class="header-logo-text" style="display:none;">Sneaker<span>Impact</span></span>
         </div>
-        <span class="header-title">Inspection Dashboard</span>
+        <span class="header-title">Label Data</span>
         <div class="header-spacer"></div>
         <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme"><span id="theme-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span></button>
         <span class="mode-badge simulation" id="mode-badge">SIMULATION MODE</span>
     </header>
 
-    <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
     <nav class="sidebar">
         <div class="nav-section">
             <span class="nav-section-label">Operations</span>
@@ -48,16 +44,16 @@
             <a href="live_feed.html" class="nav-link">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Live Feed
             </a>
-            <a href="review_queue.html" class="nav-link active">
-                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span> Review Queue
+            <a href="review_queue.html" class="nav-link">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/></svg></span> Review Queue
             </a>
         </div>
-<div class="nav-section">
+        <div class="nav-section">
             <span class="nav-section-label">Tools</span>
             <a href="labeling.html" class="nav-link">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></span> Labeling
             </a>
-            <a href="label_data.html" class="nav-link">
+            <a href="label_data.html" class="nav-link active">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/></svg></span> Label Data
             </a>
         </div>
@@ -78,34 +74,43 @@
         </div>
     </nav>
 
-    <!-- ── MAIN ────────────────────────────────────────────────── -->
     <main class="main">
         <div class="page-header">
-            <h1 class="page-title">Review Queue</h1>
-            <p class="page-subtitle">
-                Shoes the AI flagged as REVIEW. Each shoe needs a human decision before it can be closed.
-            </p>
+            <h1 class="page-title">Label Data</h1>
+            <p class="page-subtitle">The curated training set — every auto-approved pair crop (color + make + model), copied here for model training.</p>
         </div>
 
-        <!-- Count banner — populated by JS -->
-        <div class="queue-banner" id="queue-banner">
-            <div class="queue-count">—</div>
-            <div class="queue-banner-text">
-                <strong>Loading queue...</strong>
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">Curated pairs</span>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="ld-make" class="ld-filter" title="Filter by make"><option value="">All makes</option></select>
+                    <select id="ld-color" class="ld-filter" title="Filter by color"><option value="">All colors</option></select>
+                    <button class="btn-secondary" id="refresh-btn" type="button" style="padding:5px 12px;">Refresh</button>
+                </div>
             </div>
-        </div>
-
-        <!-- Table — populated by JS -->
-        <div id="queue-container">
-            <div class="loading-state">Loading...</div>
+            <div id="ld-stats" class="ld-stats"></div>
+            <div id="ld-container"><div class="loading-state">Loading…</div></div>
         </div>
     </main>
 
 </div><!-- /.layout -->
 
+<!-- Detail modal -->
+<div class="modal-overlay" id="ld-modal" role="dialog" aria-modal="true">
+    <div class="modal" style="max-width:720px;">
+        <div class="modal-header" id="ld-modal-title">Label entry</div>
+        <div class="modal-body" id="ld-modal-body"></div>
+        <div class="modal-actions">
+            <button class="btn-danger" id="ld-delete" type="button">Delete</button>
+            <button class="btn-success" id="ld-close" type="button">Close</button>
+        </div>
+    </div>
+</div>
+
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=6"></script>
+<script src="js/api.js?v=11"></script>
 <script src="js/utils.js"></script>
-<script src="js/review_queue.js"></script>
+<script src="js/label_data.js?v=2"></script>
 </body>
 </html>

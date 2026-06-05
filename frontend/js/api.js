@@ -199,6 +199,17 @@ const api = {
         return apiFetch(`/api/pairs${qs ? "?" + qs : ""}`);
     },
 
+    /** Browse the curated label_data training set (filters: make, color, page, page_size). */
+    getLabelData(params = {}) {
+        const qs = new URLSearchParams(params).toString();
+        return apiFetch(`/api/label-data${qs ? "?" + qs : ""}`);
+    },
+
+    /** Delete one label_data crop (+ its JSON sidecar) by filename. */
+    deleteLabelData(filename) {
+        return apiFetch(`/api/label-data/${encodeURIComponent(filename)}`, { method: "DELETE" });
+    },
+
     /** Get a single pair. */
     getPair(id) {
         return apiFetch(`/api/pairs/${encodeURIComponent(id)}`);
