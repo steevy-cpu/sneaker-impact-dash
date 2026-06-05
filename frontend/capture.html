@@ -111,12 +111,34 @@
                         <div class="shipment-preview" id="shipment-preview" style="display:none;"></div>
                     </div>
 
+                    <!-- Always-visible box data (full-send): fill these, then press the button -->
+                    <div class="box-grid">
+                        <div class="box-field">
+                            <div class="box-field-label">⚖️ Weight (lbs)</div>
+                            <input class="form-input" id="cap-weight" type="number" min="0" max="999.9" step="0.1" value="0" inputmode="decimal">
+                        </div>
+                        <div class="box-field">
+                            <div class="box-field-label">✅ Good Sneakers</div>
+                            <input class="form-input" id="cap-good" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
+                        </div>
+                        <div class="box-field">
+                            <div class="box-field-label">💀 End of Life</div>
+                            <input class="form-input" id="cap-eol" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
+                        </div>
+                        <div class="box-field">
+                            <div class="box-field-label">👟 Casuals</div>
+                            <input class="form-input" id="cap-casuals" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
+                        </div>
+                    </div>
+                    <div class="form-error" id="cap-error" style="display:none;"></div>
+
                     <div class="capture-actions">
-                        <button class="btn-capture" id="capture-btn">🎥 Capture Table Photo</button>
+                        <button class="btn-capture" id="capture-btn">🎥 Capture &amp; Send</button>
                         <button class="btn-secondary" id="upload-btn" type="button">Upload image…</button>
                         <input type="file" id="file-input" accept="image/*" style="display:none;">
+                        <button class="btn-secondary" id="learn-btn" type="button" title="Bind the USB-C hardware button">🔘 Set USB button</button>
                     </div>
-                    <div class="capture-hint">Press <strong>Space</strong> or <strong>Enter</strong> to capture · then enter box data</div>
+                    <div class="capture-hint" id="cap-hint">Enter box data, then press the <strong>USB button</strong> (or click <strong>Capture &amp; Send</strong>) to photograph &amp; queue.</div>
                 </div>
             </div>
         </div>
@@ -127,51 +149,9 @@
 <!-- Hidden canvas used to grab a still frame from the video -->
 <canvas id="capture-canvas" style="display:none;"></canvas>
 
-<!-- ── BOX-DATA MODAL (mirrors the desktop BoxDataDialog) ───────── -->
-<div class="modal-overlay" id="boxdata-modal" role="dialog" aria-modal="true" aria-labelledby="boxdata-title">
-    <div class="modal">
-        <div class="modal-header" id="boxdata-title">📦 Enter Box Information</div>
-        <div class="modal-body">
-            <div class="box-grid">
-                <div class="box-field">
-                    <div class="box-field-label">⚖️ Weight (lbs)</div>
-                    <div class="box-field-desc">Total weight</div>
-                    <input class="form-input" id="bd-weight" type="number" min="0" max="999.9" step="0.1" value="0" inputmode="decimal">
-                </div>
-                <div class="box-field">
-                    <div class="box-field-label">✅ Good Sneakers</div>
-                    <div class="box-field-desc">Good condition</div>
-                    <input class="form-input" id="bd-good" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
-                </div>
-                <div class="box-field">
-                    <div class="box-field-label">💀 End of Life</div>
-                    <div class="box-field-desc">Cannot be used</div>
-                    <input class="form-input" id="bd-eol" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
-                </div>
-                <div class="box-field">
-                    <div class="box-field-label">👟 Casuals</div>
-                    <div class="box-field-desc">Casual shoes</div>
-                    <input class="form-input" id="bd-casuals" type="number" min="0" max="999" step="1" value="0" inputmode="numeric">
-                </div>
-            </div>
-
-            <div class="box-barcode-row">
-                <label class="form-label" for="bd-barcode">📦 Barcode / Tracking Number</label>
-                <input class="form-input" id="bd-barcode" type="text" placeholder="(optional)" autocomplete="off">
-            </div>
-
-            <div class="form-error" id="bd-error" style="display:none;"></div>
-        </div>
-        <div class="modal-actions">
-            <button class="btn-danger" id="bd-cancel" type="button">❌ Cancel</button>
-            <button class="btn-success" id="bd-confirm" type="button">✅ Confirm &amp; Capture</button>
-        </div>
-    </div>
-</div>
-
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=7"></script>
+<script src="js/api.js?v=12"></script>
 <script src="js/utils.js"></script>
-<script src="js/capture.js?v=1"></script>
+<script src="js/capture.js?v=2"></script>
 </body>
 </html>

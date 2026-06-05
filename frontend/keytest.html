@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>USB Button Test</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; padding:24px; }
+        h1 { font-size:18px; }
+        #big { font-size:42px; font-weight:700; color:#38bdf8; margin:16px 0; min-height:52px; word-break:break-all; }
+        #log { background:#1e293b; border-radius:8px; padding:12px; height:60vh; overflow:auto; font-family:ui-monospace,monospace; font-size:14px; }
+        .row { padding:4px 0; border-bottom:1px solid #334155; }
+        .k { color:#fbbf24; } .v { color:#a5f3fc; }
+        input { width:100%; padding:10px; font-size:16px; margin-bottom:12px; box-sizing:border-box; }
+        button { padding:8px 14px; font-size:14px; }
+    </style>
+</head>
+<body>
+    <h1>USB Button Test — click this page once, then press the USB-C button</h1>
+    <input id="focus" placeholder="(click here first to give the page focus, then press the button)" autofocus>
+    <div>Last event: <span id="big">—</span></div>
+    <button onclick="document.getElementById('log').innerHTML=''">Clear log</button>
+    <div id="log"></div>
+
+<script>
+const log = document.getElementById("log");
+const big = document.getElementById("big");
+function add(type, detail) {
+    big.textContent = type + "  " + detail;
+    const div = document.createElement("div");
+    div.className = "row";
+    div.innerHTML = `<span class="k">${type}</span> <span class="v">${detail}</span> <span style="color:#64748b">@ ${new Date().toLocaleTimeString()}</span>`;
+    log.prepend(div);
+}
+window.addEventListener("keydown", e => {
+    add("keydown", `key="${e.key}"  code="${e.code}"  keyCode=${e.keyCode}` + (e.ctrlKey?" +ctrl":"") + (e.altKey?" +alt":"") + (e.metaKey?" +meta":"") + (e.shiftKey?" +shift":""));
+    if (e.key === "Enter" || e.key === " ") e.preventDefault();
+});
+window.addEventListener("mousedown", e => add("mousedown", `button=${e.button}`));
+window.addEventListener("click", e => add("click", `button=${e.button}`));
+window.addEventListener("contextmenu", e => { add("contextmenu (right-click)", ""); e.preventDefault(); });
+window.addEventListener("wheel", e => add("wheel", `deltaY=${e.deltaY}`));
+add("ready", "press the button now");
+</script>
+</body>
+</html>
