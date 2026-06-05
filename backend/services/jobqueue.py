@@ -139,18 +139,21 @@ class EngineWorker:
             print(f"[worker] {tp_id}: {len(pairs)} pair(s) "
                   f"({approved} auto-approved) -> completed.")
 
-            # Stage 2 outbound sync (best-effort, isolated so it can never flip
-            # the job to 'failed'): brand summary -> Airtable. No-op unless creds set.
+            # Stage 2 (best-effort, isolated so it can never flip the job to
+            # 'failed'): attach the brand summary to the durable outbox row and
+            # try to send it. If the shipment isn't in Airtable yet, it stays
+            # queued and the retry worker delivers it later. No-op unless a
+            # barcode was scanned.
             try:
-                from backend.services.airtable_sync import (get_airtable_sync,
-                                                            sync_enabled,
-                                                            brand_summary_from_pairs)
-                if sync_enabled() and job.get("barcode"):
+                from backend.services.airtable_sync import brand_summary_from_pairs
+                from backend.services.airtable_outbox import set_brand_summary, try_one_async
+                if job.get("barcode"):
                     summary = brand_summary_from_pairs(pairs)
                     if summary:
-                        get_airtable_sync().sync_brand_summary(job["barcode"], summary)
+                        set_brand_summary(conn, tp_id, summary)
+                        try_one_async(tp_id)
             except Exception as exc:                   # noqa: BLE001 - never affect status
-                print(f"[worker] airtable brand-summary sync error: {exc}")
+                print(f"[worker] outbox brand-summary error: {exc}")
         except Exception as exc:                       # noqa: BLE001 - never crash worker
             try:
                 conn.rollback()

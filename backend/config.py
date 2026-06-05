@@ -95,3 +95,8 @@ AIRTABLE_PARTNERS_TABLE  = os.getenv("AIRTABLE_PARTNERS_TABLE", "Partners")
 # summary on completion). Dormant until AIRTABLE_API_KEY + AIRTABLE_BASE_ID are
 # set (then auto-activates on restart). Set to 0 to keep reads but disable writes.
 AIRTABLE_SYNC_ENABLED = os.getenv("AIRTABLE_SYNC_ENABLED", "1") not in ("0", "false", "False")
+# Durable outbox: every capture's box data + brand summary is saved locally and
+# retried until its shipment exists in Airtable and the update lands (so data is
+# never lost if the shipment is imported AFTER it was scanned). How often the
+# background retry worker re-attempts pending rows.
+OUTBOX_RETRY_SECONDS = int(os.getenv("OUTBOX_RETRY_SECONDS", "300"))  # 5 min

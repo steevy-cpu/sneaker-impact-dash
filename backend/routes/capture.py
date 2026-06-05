@@ -92,21 +92,17 @@ def _attach_shipment(conn, tp_id, barcode):
         print(f"[capture] shipment attach failed: {exc}")
 
 
-def _sync_box_async(barcode, box):
-    """Stage 1 outbound sync (dash -> Airtable), fire-and-forget + fail-safe.
-    No-op unless Airtable credentials are configured (sync_enabled())."""
-    if not barcode:
-        return
-
-    def run():
-        try:
-            from backend.services.airtable_sync import get_airtable_sync, sync_enabled
-            if sync_enabled():
-                get_airtable_sync().sync_box_metadata(barcode, box)
-        except Exception as exc:                       # noqa: BLE001 - never block capture
-            print(f"[capture] airtable box sync error: {exc}")
-
-    threading.Thread(target=run, daemon=True).start()
+def _enqueue_outbox(conn, tp_id, barcode, box):
+    """Stage 1: save box data to the durable outbox. It's sent to Airtable
+    immediately if the shipment row exists, otherwise kept and retried until it
+    does (so nothing is lost when a shipment is imported later). Fail-safe —
+    never blocks or fails the capture."""
+    try:
+        from backend.services.airtable_outbox import enqueue, try_one_async
+        if enqueue(conn, tp_id, barcode, box):
+            try_one_async(tp_id)
+    except Exception as exc:                            # noqa: BLE001 - never block capture
+        print(f"[capture] outbox enqueue error: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -131,10 +127,10 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
         good=data.total_good_sneakers, eol=data.total_end_of_life, casuals=data.casuals,
     )
     _attach_shipment(conn, tp_id, data.barcode)
-    _sync_box_async(data.barcode, {"weight": data.weight_of_box,
-                                   "good": data.total_good_sneakers,
-                                   "eol": data.total_end_of_life,
-                                   "casuals": data.casuals})
+    _enqueue_outbox(conn, tp_id, data.barcode, {"weight": data.weight_of_box,
+                                                "good": data.total_good_sneakers,
+                                                "eol": data.total_end_of_life,
+                                                "casuals": data.casuals})
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
     return table_photo_to_dict(row)
 
@@ -186,8 +182,8 @@ async def capture(
         good=total_good_sneakers, eol=total_end_of_life, casuals=casuals,
     )
     _attach_shipment(conn, tp_id, barcode)
-    _sync_box_async(barcode, {"weight": weight_of_box, "good": total_good_sneakers,
-                              "eol": total_end_of_life, "casuals": casuals})
+    _enqueue_outbox(conn, tp_id, barcode, {"weight": weight_of_box, "good": total_good_sneakers,
+                                           "eol": total_end_of_life, "casuals": casuals})
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
     return table_photo_to_dict(row)
 

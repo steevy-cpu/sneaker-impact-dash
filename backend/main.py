@@ -20,8 +20,9 @@ from fastapi.staticfiles import StaticFiles
 from backend.config import (APP_MODE, IMAGES_DIR, SIM_IMAGES_DIR, FRONTEND_DIR,
                             TABLE_PHOTOS_DIR, PAIRS_DIR, LABEL_DATA_DIR)
 from backend.database import init_db, get_connection
-from backend.routes import (analytics, batches, capture, config_station, export,
-                            health, label_data, pairs, shipment, shoes, simulation)
+from backend.routes import (airtable_outbox, analytics, batches, capture,
+                            config_station, export, health, label_data, pairs,
+                            shipment, shoes, simulation)
 
 # Directories must exist before app.mount() is called (mount happens at import time)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,9 +61,15 @@ async def lifespan(app: FastAPI):
     from backend.services.jobqueue import worker
     worker.start()
 
+    # 4. Start the Airtable outbox retry worker (delivers queued box data once
+    #    its shipment appears in Airtable). Cheap no-op while writes are off.
+    from backend.services.airtable_outbox import retrier
+    retrier.start()
+
     yield  # --- app is live here ---
 
     worker.stop()
+    retrier.stop()
     print("\nShutting down cleanly.")
 
 
@@ -136,6 +143,7 @@ app.include_router(pairs.router)     # new table-photo flow: /api/pairs
 app.include_router(shipment.router)  # barcode -> shipment lookup: /api/shipment/{barcode}
 app.include_router(config_station.router)  # config tab + v4l2 camera control: /api/config/*, /api/camera/*
 app.include_router(label_data.router)      # curated training set browser: /api/label-data
+app.include_router(airtable_outbox.router) # durable send-when-available queue: /api/airtable-outbox
 
 
 # ---------------------------------------------------------------------------

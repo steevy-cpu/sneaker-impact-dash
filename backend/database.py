@@ -149,6 +149,30 @@ def init_db():
             updated_at TEXT
         );
 
+        -- ----------------------------------------------------------------
+        -- airtable_outbox: durable "send-when-available" queue (one row per
+        -- capture). Box data + brand summary are saved here and retried until
+        -- the shipment exists in Airtable and the update lands. Mirrors
+        -- ShoeSort's metadata_queue so nothing is ever lost.
+        -- ----------------------------------------------------------------
+        CREATE TABLE IF NOT EXISTS airtable_outbox (
+            table_photo_id      TEXT PRIMARY KEY,   -- idempotent key (one per capture)
+            match_barcode       TEXT NOT NULL,      -- normalized key matched against Airtable
+            full_barcode        TEXT,               -- original scanned value
+            good                INTEGER,
+            eol                 INTEGER,
+            casuals             INTEGER,
+            weight              REAL,
+            brand_summary       TEXT,               -- filled on completion (Stage 2)
+            status              TEXT NOT NULL DEFAULT 'pending',  -- pending|synced
+            attempts            INTEGER NOT NULL DEFAULT 0,
+            last_error          TEXT,               -- why it's still pending (e.g. 'no_row')
+            airtable_record_id  TEXT,
+            created_at          TEXT NOT NULL,
+            last_attempt_at     TEXT,
+            synced_at           TEXT
+        );
+
         -- Indexes for the most common query patterns
         CREATE INDEX IF NOT EXISTS idx_shoes_batch      ON shoes(batch_id);
         CREATE INDEX IF NOT EXISTS idx_shoes_timestamp  ON shoes(timestamp);
@@ -159,6 +183,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_table_photos_created ON table_photos(created_at);
         CREATE INDEX IF NOT EXISTS idx_pairs_table_photo    ON pairs(table_photo_id);
         CREATE INDEX IF NOT EXISTS idx_pairs_review         ON pairs(review_status);
+        CREATE INDEX IF NOT EXISTS idx_outbox_status        ON airtable_outbox(status);
     """)
 
     conn.commit()

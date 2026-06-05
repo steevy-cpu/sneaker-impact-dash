@@ -210,6 +210,17 @@ const api = {
         return apiFetch(`/api/label-data/${encodeURIComponent(filename)}`, { method: "DELETE" });
     },
 
+    /** Airtable outbox: queued captures + counts (filter by status pending|synced). */
+    getAirtableOutbox(params = {}) {
+        const qs = new URLSearchParams(params).toString();
+        return apiFetch(`/api/airtable-outbox${qs ? "?" + qs : ""}`);
+    },
+
+    /** Retry all pending outbox rows now. */
+    flushAirtableOutbox() {
+        return apiFetch(`/api/airtable-outbox/flush`, { method: "POST" });
+    },
+
     /** Get a single pair. */
     getPair(id) {
         return apiFetch(`/api/pairs/${encodeURIComponent(id)}`);
