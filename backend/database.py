@@ -140,6 +140,15 @@ def init_db():
             FOREIGN KEY (table_photo_id) REFERENCES table_photos(id)
         );
 
+        -- ----------------------------------------------------------------
+        -- app_config: small server-side key/value store (e.g. station config)
+        -- ----------------------------------------------------------------
+        CREATE TABLE IF NOT EXISTS app_config (
+            key        TEXT PRIMARY KEY,
+            value      TEXT NOT NULL,   -- JSON
+            updated_at TEXT
+        );
+
         -- Indexes for the most common query patterns
         CREATE INDEX IF NOT EXISTS idx_shoes_batch      ON shoes(batch_id);
         CREATE INDEX IF NOT EXISTS idx_shoes_timestamp  ON shoes(timestamp);

@@ -1745,3 +1745,26 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
 .pair-actions { display: flex; gap: 8px; margin-top: 12px; }
 .pair-actions .pair-approve { flex: 1 1 auto; }
 .pair-actions .pair-skip { flex: 0 0 auto; }
+
+/* ========================================================================
+   Station Config (P6) — camera (v4l2) controls + integrations status.
+   ======================================================================== */
+.cfg-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.cfg-row .form-label { flex: 0 0 140px; margin: 0; }
+.cfg-row .form-select { flex: 1 1 auto; max-width: 420px; }
+.cfg-actions { display: flex; gap: 10px; margin-top: 18px; }
+
+.cam-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin-top: 8px; }
+@media (max-width: 720px) { .cam-controls { grid-template-columns: 1fr; } }
+.cam-ctrl { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+.cam-ctrl-label { flex: 0 0 150px; font-size: var(--text-sm); text-transform: capitalize; color: var(--text); }
+.cam-ctrl-input { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; }
+.cam-range { flex: 1 1 auto; accent-color: var(--primary); }
+.cam-val { flex: 0 0 42px; text-align: right; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-muted); }
+.cam-ctrl-input .form-select { flex: 1 1 auto; }
+
+.cfg-status-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-light); }
+.cfg-status-row:last-child { border-bottom: none; }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; display: inline-block; }
+.status-dot.on  { background: var(--reuse); box-shadow: 0 0 0 3px var(--reuse-bg); }
+.status-dot.off { background: var(--text-light); }

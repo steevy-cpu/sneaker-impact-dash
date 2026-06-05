@@ -3,31 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shoe Detail — Sneaker Impact</title>
+    <title>Config — Sneaker Impact</title>
     <script src="js/theme.js"></script>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/components.css?v=6">
+    <link rel="stylesheet" href="css/components.css?v=9">
 </head>
 <body>
 <div class="layout">
 
-    <!-- ── HEADER ─────────────────────────────────────────────── -->
     <header class="header">
         <div class="header-logo">
-            <img src="assets/Sneaker_impact_logo.avif"
-                 alt="Sneaker Impact"
-                 class="header-logo-img"
+            <img src="assets/Sneaker_impact_logo.avif" alt="Sneaker Impact" class="header-logo-img"
                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
             <span class="header-logo-text" style="display:none;">Sneaker<span>Impact</span></span>
         </div>
-        
-        <span class="header-title">Inspection Dashboard</span>
+        <span class="header-title">Station Config</span>
         <div class="header-spacer"></div>
         <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme"><span id="theme-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span></button>
         <span class="mode-badge simulation" id="mode-badge">SIMULATION MODE</span>
     </header>
 
-    <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
     <nav class="sidebar">
         <div class="nav-section">
             <span class="nav-section-label">Operations</span>
@@ -50,7 +45,7 @@
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span> Review Queue
             </a>
         </div>
-<div class="nav-section">
+        <div class="nav-section">
             <span class="nav-section-label">Tools</span>
             <a href="labeling.html" class="nav-link">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></span> Labeling
@@ -67,29 +62,59 @@
         </div>
         <div class="nav-section">
             <span class="nav-section-label">Settings</span>
-            <a href="config.html" class="nav-link">
-                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> Config
+            <a href="config.html" class="nav-link active">
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span> Config
             </a>
         </div>
     </nav>
 
-    <!-- ── MAIN ────────────────────────────────────────────────── -->
     <main class="main">
-        <!--
-            detail-root is entirely replaced by shoe_detail.js.
-            The back link, page header, image grid, result cards,
-            and metadata table are all rendered into this element.
-        -->
-        <div id="detail-root">
-            <div class="loading-state">Loading shoe record...</div>
+        <div class="page-header">
+            <h1 class="page-title">Station Config</h1>
+            <p class="page-subtitle">Adjust the station camera and review integrations. Camera changes apply to the real device on the station box.</p>
+        </div>
+
+        <!-- Camera control -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">Camera</span>
+                <button class="btn-secondary" id="cam-refresh" type="button" style="padding:5px 12px;">Refresh</button>
+            </div>
+            <div class="card-body">
+                <div class="cfg-row">
+                    <label class="form-label" for="cam-device">Device</label>
+                    <select class="form-select" id="cam-device"></select>
+                </div>
+                <div class="cfg-row">
+                    <label class="form-label" for="cam-resolution">Capture resolution</label>
+                    <select class="form-select" id="cam-resolution"></select>
+                </div>
+                <div id="cam-controls"><div class="loading-state">Loading camera…</div></div>
+                <div class="cfg-actions">
+                    <button class="btn-secondary" id="cam-reset" type="button">Reset to defaults</button>
+                    <button class="btn-success" id="cfg-save" type="button">Save station settings</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Integrations status -->
+        <div class="card">
+            <div class="card-header"><span class="card-title">Integrations</span></div>
+            <div class="card-body">
+                <div id="integrations"><div class="loading-state">Loading…</div></div>
+                <p class="text-muted text-xs" style="margin-top:10px;">
+                    Airtable credentials are set in <code>.env</code> (server-side) for security, then restart.
+                    This panel only shows whether they're configured.
+                </p>
+            </div>
         </div>
     </main>
 
 </div><!-- /.layout -->
 
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=6"></script>
+<script src="js/api.js?v=9"></script>
 <script src="js/utils.js"></script>
-<script src="js/shoe_detail.js"></script>
+<script src="js/config.js?v=1"></script>
 </body>
 </html>

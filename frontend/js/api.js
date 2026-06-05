@@ -209,6 +209,21 @@ const api = {
         return apiFetch(`/api/shipment/${encodeURIComponent(barcode)}`);
     },
 
+    /* ---- Config tab (station config + v4l2 camera control) -------------- */
+
+    getStationConfig()       { return apiFetch("/api/config/station"); },
+    saveStationConfig(cfg)   { return apiFetch("/api/config/station", { method: "PUT", body: JSON.stringify(cfg) }); },
+    getIntegrations()        { return apiFetch("/api/config/integrations"); },
+    getCameraDevices()       { return apiFetch("/api/camera/devices"); },
+    getCameraControls(dev)   { return apiFetch(`/api/camera/controls?device=${encodeURIComponent(dev)}`); },
+    getCameraResolutions(dev){ return apiFetch(`/api/camera/resolutions?device=${encodeURIComponent(dev)}`); },
+    setCameraControl(device, name, value) {
+        return apiFetch("/api/camera/control", { method: "POST", body: JSON.stringify({ device, name, value }) });
+    },
+    resetCamera(device) {
+        return apiFetch("/api/camera/reset", { method: "POST", body: JSON.stringify({ device }) });
+    },
+
     /**
      * Human confirm/override a pair.
      * @param {string} id
