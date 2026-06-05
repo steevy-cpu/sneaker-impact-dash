@@ -12,8 +12,10 @@ import json
 import threading
 from datetime import datetime
 
-from backend.config import (ENGINE_ENABLED, ENGINE_POLL_SECONDS, IMAGES_DIR)
+from backend.config import (ENGINE_ENABLED, ENGINE_POLL_SECONDS, IMAGES_DIR,
+                            PAIRS_DIR, AUTO_APPROVE_CONF)
 from backend.database import get_connection
+from backend.services.label_export import export_label
 from backend.services.pipeline import process_table_photo
 from backend.utils.id_generator import generate_pair_id
 
@@ -86,30 +88,55 @@ class EngineWorker:
             pairs = process_table_photo(tp_id, str(fs_path))
 
             now = datetime.now().isoformat()
-            for p in pairs:
+            approved = 0
+            for idx, p in enumerate(pairs, 1):
                 pid = generate_pair_id(conn)
                 img_file = p.get("image_file")
                 img_url = f"/images/pairs/{img_file}" if img_file else None
+                make, model = p.get("make"), p.get("model")
+                mk_c, md_c = p.get("make_confidence"), p.get("model_confidence")
+
+                # Auto-approve high-confidence pairs: no human review needed and
+                # they go straight into the curated label_data training set.
+                confident = (
+                    make and str(make).lower() != "unknown"
+                    and model and str(model).lower() != "unknown"
+                    and isinstance(mk_c, (int, float)) and mk_c >= AUTO_APPROVE_CONF
+                    and isinstance(md_c, (int, float)) and md_c >= AUTO_APPROVE_CONF
+                )
+                review_status = "NOT_REQUIRED" if confident else "PENDING"
+                final_make = make if confident else None
+                final_model = model if confident else None
+
                 conn.execute(
                     """INSERT INTO pairs (
                         id, table_photo_id, image_path, bbox,
                         detected_color, color_confidence,
                         make, make_confidence, model, model_confidence,
-                        model_sources, review_status, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)""",
+                        model_sources, review_status, final_make, final_model, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (pid, tp_id, img_url, json.dumps(p.get("bbox")),
                      p.get("detected_color"), p.get("color_confidence"),
-                     p.get("make"), p.get("make_confidence"),
-                     p.get("model"), p.get("model_confidence"),
-                     json.dumps(p.get("model_sources") or []), now),
+                     make, mk_c, model, md_c,
+                     json.dumps(p.get("model_sources") or []),
+                     review_status, final_make, final_model, now),
                 )
+                if confident:
+                    approved += 1
+                    if img_file:
+                        export_label(str(PAIRS_DIR / img_file),
+                                     color=p.get("detected_color"),
+                                     make=make, model=model,
+                                     make_conf=mk_c, model_conf=md_c,
+                                     source_photo=tp_id, source_pair=idx)
             conn.execute(
                 "UPDATE table_photos SET status = 'completed', num_pairs = ?, "
                 "processed_at = ?, error_message = NULL WHERE id = ?",
                 (len(pairs), now, tp_id),
             )
             conn.commit()
-            print(f"[worker] {tp_id}: {len(pairs)} pair(s) -> completed.")
+            print(f"[worker] {tp_id}: {len(pairs)} pair(s) "
+                  f"({approved} auto-approved) -> completed.")
         except Exception as exc:                       # noqa: BLE001 - never crash worker
             try:
                 conn.rollback()

@@ -1704,3 +1704,35 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
 .toast-barcode { background: #8e44ad; }
 
 @media (max-width: 560px) { .box-grid { grid-template-columns: 1fr; } }
+
+/* ========================================================================
+   Pairs Review (P4) — cards of AI-detected pairs awaiting human confirm.
+   ======================================================================== */
+.pairs-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;
+}
+.pair-card {
+  display: flex; flex-direction: column; background: var(--card-bg);
+  border: 1.5px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; box-shadow: var(--shadow-xs);
+}
+.pair-card-img {
+  width: 100%; height: 200px; object-fit: cover; background: #0b1220; display: block;
+}
+.pair-card-img--none {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-light); font-size: var(--text-sm);
+}
+.pair-card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 7px; }
+.pair-card-head { display: flex; align-items: center; justify-content: space-between; }
+.pair-card-id { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.pair-meta-row { display: flex; gap: 8px; align-items: baseline; }
+.pair-meta-label { flex: 0 0 64px; font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
+.pair-meta-val { font-size: var(--text-sm); }
+.text-xs { font-size: var(--text-xs); }
+.pair-edit { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.pair-edit .form-label { margin-top: 4px; }
+.pair-edit .form-input { padding: 7px 10px; font-size: var(--text-sm); }
+.pair-actions { display: flex; gap: 8px; margin-top: 12px; }
+.pair-actions .pair-approve { flex: 1 1 auto; }
+.pair-actions .pair-skip { flex: 0 0 auto; }

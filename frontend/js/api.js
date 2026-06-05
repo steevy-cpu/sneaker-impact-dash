@@ -187,4 +187,32 @@ const api = {
     getTablePhotoStatus(id) {
         return apiFetch(`/api/table-photos/${encodeURIComponent(id)}/status`);
     },
+
+    /** Re-queue a table photo for background processing. */
+    reprocessTablePhoto(id) {
+        return apiFetch(`/api/table-photos/${encodeURIComponent(id)}/reprocess`, { method: "POST" });
+    },
+
+    /** List pairs (filters: table_photo_id, review_status, page, page_size). */
+    getPairs(params = {}) {
+        const qs = new URLSearchParams(params).toString();
+        return apiFetch(`/api/pairs${qs ? "?" + qs : ""}`);
+    },
+
+    /** Get a single pair. */
+    getPair(id) {
+        return apiFetch(`/api/pairs/${encodeURIComponent(id)}`);
+    },
+
+    /**
+     * Human confirm/override a pair.
+     * @param {string} id
+     * @param {{ final_make?, final_model?, review_status?, notes? }} data
+     */
+    reviewPair(id, data) {
+        return apiFetch(`/api/pairs/${encodeURIComponent(id)}/review`, {
+            method: "PATCH",
+            body:   JSON.stringify(data),
+        });
+    },
 };

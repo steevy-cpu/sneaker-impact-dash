@@ -55,3 +55,13 @@ ENGINE_OLLAMA_URL   = os.getenv("ENGINE_OLLAMA_URL", "http://localhost:11434")
 ENGINE_MODEL_TIMEOUT = int(os.getenv("ENGINE_MODEL_TIMEOUT", "240"))  # per-pair VLM call
 ENGINE_JOB_TIMEOUT   = int(os.getenv("ENGINE_JOB_TIMEOUT", "1800"))   # per whole photo
 ENGINE_POLL_SECONDS  = float(os.getenv("ENGINE_POLL_SECONDS", "3"))   # worker poll interval
+
+# Pairs whose make AND model confidence are >= this are auto-approved (review
+# not required, final make/model set) and exported to label_data. NOTE: the
+# Ollama model confidence is uncalibrated (~0.95 flat), so in practice this
+# gate is driven mostly by the make (CLIP) confidence.
+AUTO_APPROVE_CONF = float(os.getenv("AUTO_APPROVE_CONF", "0.80"))
+# Curated, training-ready subset (shoes_<color>_<make>_<N>.jpg + JSON) that the
+# auto-approved pairs are copied into — feeds the engine's catalog/training.
+# Defaults into the engine submodule's label_data dir.
+LABEL_DATA_DIR = Path(os.getenv("LABEL_DATA_DIR", str(ENGINE_DIR / "label_data")))
