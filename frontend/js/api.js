@@ -226,6 +226,11 @@ const api = {
         return apiFetch(`/api/airtable-outbox/flush`, { method: "POST" });
     },
 
+    /** FedEx Track lookup for a queued box's tracking number (diagnostic). */
+    fedexLookup(tpId) {
+        return apiFetch(`/api/airtable-outbox/${encodeURIComponent(tpId)}/fedex`);
+    },
+
     /** Get a single pair. */
     getPair(id) {
         return apiFetch(`/api/pairs/${encodeURIComponent(id)}`);

@@ -107,6 +107,20 @@ CLOUD_IDENTIFY_ENABLED = (
     and bool(_CLOUD_KEYS.get(CLOUD_BACKEND))
 )
 
+# --- FedEx Track (diagnostic lookup for no_row boxes on the Airtable Sync page) -
+# Resolve a scanned FedEx tracking number to shipment details (status, weight,
+# delivery, shipper). OAuth2 client-credentials. Sandbox base:
+# https://apis-sandbox.fedex.com. Dormant until FEDEX_API_KEY + FEDEX_SECRET set.
+FEDEX_API_KEY  = os.getenv("FEDEX_API_KEY", "")
+FEDEX_SECRET   = os.getenv("FEDEX_SECRET", "")
+FEDEX_ACCOUNT  = os.getenv("FEDEX_ACCOUNT", "")          # not needed for Track, kept for later
+FEDEX_BASE_URL = os.getenv("FEDEX_BASE_URL", "https://apis.fedex.com")
+FEDEX_TIMEOUT  = int(os.getenv("FEDEX_TIMEOUT", "20"))
+FEDEX_ENABLED  = (
+    os.getenv("FEDEX_ENABLED", "1") not in ("0", "false", "False")
+    and bool(FEDEX_API_KEY and FEDEX_SECRET)
+)
+
 # --- Shipment lookup (barcode -> shipment/order info) -----------------------
 # Pluggable: resolve a scanned barcode (often a FedEx tracking #) to its
 # shipment record. "airtable" matches against the company's Airtable (populated

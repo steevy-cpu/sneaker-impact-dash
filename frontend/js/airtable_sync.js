@@ -6,6 +6,8 @@
  * the operator flush (retry all pending) on demand.
  */
 
+let FEDEX_ON = false;
+
 function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
         .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -36,10 +38,12 @@ async function load() {
     }
 
     const pend = d.counts.pending || 0, sync = d.counts.synced || 0;
+    FEDEX_ON = !!d.fedex_enabled;
     const writeChip = d.sync_enabled
         ? `<span class="ld-chip ld-chip--total">writes ON</span>`
         : `<span class="ld-chip" style="background:var(--danger-soft,#fde8e8);color:var(--danger,#c0392b)">writes OFF</span>`;
-    statusEl.innerHTML = `${writeChip}
+    const fedexChip = FEDEX_ON ? `<span class="ld-chip">📦 FedEx lookup ON</span>` : "";
+    statusEl.innerHTML = `${writeChip}${fedexChip}
         <span class="ld-chip">⏳ ${pend} pending</span>
         <span class="ld-chip">✅ ${sync} synced</span>`;
 
@@ -48,6 +52,8 @@ async function load() {
             "Nothing queued yet. Captures with a barcode are saved here and sent to Airtable when their shipment exists.");
         return;
     }
+    // Offer a FedEx lookup only where it helps: enabled + shipment-not-in-Airtable.
+    const canLookup = (it) => FEDEX_ON && it.status !== "synced" && it.last_error === "no_row";
     const rows = d.items.map(it => `
         <tr>
             <td class="td-id"><span class="td-link">${esc(it.table_photo_id)}</span></td>
@@ -61,11 +67,42 @@ async function load() {
             <td class="text-sm">${esc(it.brand_summary || "—")}</td>
             <td>${statusBadge(it.status)}</td>
             <td class="text-sm text-muted">${reasonText(it)}</td>
+            <td class="text-sm">${canLookup(it)
+                ? `<button class="btn-secondary fedex-btn" data-tp="${esc(it.table_photo_id)}" style="padding:3px 9px;">📦 Check FedEx</button>
+                   <span class="fedex-out text-xs text-muted" data-out="${esc(it.table_photo_id)}"></span>`
+                : ""}</td>
             <td class="text-sm text-muted">${it.attempts || 0}</td>
         </tr>`).join("");
     c.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th>Capture</th><th>Barcode</th><th>Box</th><th>Brands</th><th>Status</th><th>Detail</th><th>Tries</th></tr></thead>
+        <thead><tr><th>Capture</th><th>Barcode</th><th>Box</th><th>Brands</th><th>Status</th><th>Detail</th><th>FedEx</th><th>Tries</th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
+
+    c.querySelectorAll(".fedex-btn").forEach(btn => btn.addEventListener("click", onFedexLookup));
+}
+
+async function onFedexLookup(e) {
+    const btn = e.currentTarget;
+    const tp = btn.dataset.tp;
+    const out = document.querySelector(`.fedex-out[data-out="${CSS.escape(tp)}"]`);
+    btn.disabled = true; const label = btn.textContent; btn.textContent = "Checking…";
+    try {
+        const r = await api.fedexLookup(tp);
+        if (r && r.found) {
+            const bits = [
+                r.delivered ? "✅ delivered" : (r.status || "in transit"),
+                r.delivery_date ? new Date(r.delivery_date).toLocaleDateString() : "",
+                r.weight || "",
+                r.shipper ? "from " + r.shipper : "",
+            ].filter(Boolean).join(" · ");
+            out.innerHTML = ` <span style="color:var(--success,#27ae60)">${esc(bits)} — real shipment, not in Airtable yet</span>`;
+        } else {
+            out.innerHTML = ` <span style="color:var(--danger,#c0392b)">⚠️ ${esc((r && r.error) || "not found")}</span>`;
+        }
+    } catch (err) {
+        out.innerHTML = ` <span style="color:var(--danger,#c0392b)">lookup failed: ${esc(err.message)}</span>`;
+    } finally {
+        btn.disabled = false; btn.textContent = label;
+    }
 }
 
 document.getElementById("refresh-btn").addEventListener("click", load);
