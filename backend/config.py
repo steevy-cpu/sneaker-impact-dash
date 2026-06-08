@@ -78,6 +78,23 @@ AUTO_APPROVE_CONF = float(os.getenv("AUTO_APPROVE_CONF", "0.80"))
 # Defaults into the engine submodule's label_data dir.
 LABEL_DATA_DIR = Path(os.getenv("LABEL_DATA_DIR", str(ENGINE_DIR / "label_data")))
 
+# --- Hybrid local -> cloud identification -----------------------------------
+# When the LOCAL prediction isn't confident enough (color, make AND model each
+# below LOCAL_CONF_MIN, or any is "unknown"), fall back to a CLOUD vision model
+# for a better {color, brand, model}. The cloud prediction replaces the local
+# one and the crop + prediction are saved to label_data for future training.
+LOCAL_CONF_MIN   = float(os.getenv("LOCAL_CONF_MIN", "0.80"))  # keep local only if all 3 >= this
+CLOUD_BACKEND    = os.getenv("CLOUD_BACKEND", "gemini")        # "gemini" | "none"
+GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+GEMINI_URL       = os.getenv("GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta")
+CLOUD_TIMEOUT    = int(os.getenv("CLOUD_TIMEOUT", "30"))       # per-image cloud call (s)
+# Cloud fallback is active only when explicitly enabled AND a key is present.
+CLOUD_IDENTIFY_ENABLED = (
+    os.getenv("CLOUD_IDENTIFY_ENABLED", "1") not in ("0", "false", "False")
+    and CLOUD_BACKEND != "none" and bool(GEMINI_API_KEY)
+)
+
 # --- Shipment lookup (barcode -> shipment/order info) -----------------------
 # Pluggable: resolve a scanned barcode (often a FedEx tracking #) to its
 # shipment record. "airtable" matches against the company's Airtable (populated

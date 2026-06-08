@@ -55,7 +55,9 @@ function cardHTML(p) {
         <div class="pair-card-body">
             <div class="pair-card-head">
                 <span class="pair-card-id">${esc(p.id)}</span>
-                <span class="badge badge-review">Pending</span>
+                ${p.prediction_source && p.prediction_source.startsWith("cloud")
+                    ? `<span class="badge badge-reuse" title="${esc(p.prediction_source)}">☁️ Cloud AI</span>`
+                    : `<span class="badge badge-review">Pending</span>`}
             </div>
             <div class="pair-meta-row"><span class="pair-meta-label">From</span>
                 <span class="pair-meta-val text-sm">${esc(p.table_photo_id)}</span></div>

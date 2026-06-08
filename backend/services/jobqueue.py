@@ -13,11 +13,19 @@ import threading
 from datetime import datetime
 
 from backend.config import (ENGINE_ENABLED, ENGINE_POLL_SECONDS, IMAGES_DIR,
-                            PAIRS_DIR, AUTO_APPROVE_CONF)
+                            PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN)
 from backend.database import get_connection
+from backend.services.cloud_identify import cloud_enabled
+from backend.services.cloud_identify import identify as cloud_identify
 from backend.services.label_export import export_label
 from backend.services.pipeline import process_table_photo
 from backend.utils.id_generator import generate_pair_id
+
+
+def _known(name, conf, threshold):
+    """True when a prediction is a real (non-'unknown') label at >= threshold."""
+    return (bool(name) and str(name).lower() != "unknown"
+            and isinstance(conf, (int, float)) and conf >= threshold)
 
 
 def _image_fs_path(image_url: str):
@@ -94,16 +102,39 @@ class EngineWorker:
                 pid = generate_pair_id(conn)
                 img_file = p.get("image_file")
                 img_url = f"/images/pairs/{img_file}" if img_file else None
-                make, model = p.get("make"), p.get("model")
-                mk_c, md_c = p.get("make_confidence"), p.get("model_confidence")
+                color, color_c = p.get("detected_color"), p.get("color_confidence")
+                make, mk_c = p.get("make"), p.get("make_confidence")
+                model, md_c = p.get("model"), p.get("model_confidence")
+                sources = p.get("model_sources") or []
+                source = "local"
 
-                # Auto-approve high-confidence pairs: no human review needed and
-                # they go straight into the curated label_data training set.
+                # HYBRID: keep the local prediction only if color, make AND model
+                # are each confident (>= LOCAL_CONF_MIN) and not "unknown".
+                # Otherwise ask the cloud model and use its prediction instead.
+                local_good = (
+                    _known(color, color_c, LOCAL_CONF_MIN)
+                    and _known(make, mk_c, LOCAL_CONF_MIN)
+                    and _known(model, md_c, LOCAL_CONF_MIN)
+                )
+                if not local_good and img_file and cloud_enabled():
+                    cloud = cloud_identify(str(PAIRS_DIR / img_file))
+                    if cloud:
+                        color, color_c = cloud["color"], cloud["color_confidence"]
+                        make,  mk_c     = cloud["brand"], cloud["brand_confidence"]
+                        model, md_c     = cloud["model"], cloud["model_confidence"]
+                        sources = [cloud["source"]]
+                        source = cloud["source"]
+                        # Reflect the cloud answer in the Airtable brand summary.
+                        p["make"], p["model"] = make, model
+                        print(f"[worker] {tp_id} pair {idx}: cloud -> "
+                              f"{make}/{model} (color {color})")
+
+                used_cloud = source != "local"
+                # Auto-approve high-confidence pairs (local or cloud): no human
+                # review and straight into the curated label_data training set.
                 confident = (
-                    make and str(make).lower() != "unknown"
-                    and model and str(model).lower() != "unknown"
-                    and isinstance(mk_c, (int, float)) and mk_c >= AUTO_APPROVE_CONF
-                    and isinstance(md_c, (int, float)) and md_c >= AUTO_APPROVE_CONF
+                    _known(make, mk_c, AUTO_APPROVE_CONF)
+                    and _known(model, md_c, AUTO_APPROVE_CONF)
                 )
                 review_status = "NOT_REQUIRED" if confident else "PENDING"
                 final_make = make if confident else None
@@ -114,22 +145,26 @@ class EngineWorker:
                         id, table_photo_id, image_path, bbox, pair_score,
                         detected_color, color_confidence,
                         make, make_confidence, model, model_confidence,
-                        model_sources, review_status, final_make, final_model, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        model_sources, review_status, final_make, final_model,
+                        prediction_source, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (pid, tp_id, img_url, json.dumps(p.get("bbox")), p.get("pair_score"),
-                     p.get("detected_color"), p.get("color_confidence"),
-                     make, mk_c, model, md_c,
-                     json.dumps(p.get("model_sources") or []),
-                     review_status, final_make, final_model, now),
+                     color, color_c, make, mk_c, model, md_c,
+                     json.dumps(sources),
+                     review_status, final_make, final_model, source, now),
                 )
                 if confident:
                     approved += 1
-                    if img_file:
-                        export_label(str(PAIRS_DIR / img_file),
-                                     color=p.get("detected_color"),
-                                     make=make, model=model,
-                                     make_conf=mk_c, model_conf=md_c,
-                                     source_photo=tp_id, source_pair=idx)
+                # Save to label_data: auto-approved local pairs (as before) AND
+                # every cloud-predicted pair with a real brand+model (training data).
+                has_label = (make and str(make).lower() != "unknown"
+                             and model and str(model).lower() != "unknown")
+                if img_file and has_label and (confident or used_cloud):
+                    export_label(str(PAIRS_DIR / img_file),
+                                 color=color, make=make, model=model,
+                                 make_conf=mk_c, model_conf=md_c, color_conf=color_c,
+                                 source_photo=tp_id, source_pair=idx,
+                                 prediction_source=source)
             conn.execute(
                 "UPDATE table_photos SET status = 'completed', num_pairs = ?, "
                 "processed_at = ?, error_message = NULL WHERE id = ?",

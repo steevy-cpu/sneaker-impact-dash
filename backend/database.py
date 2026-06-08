@@ -197,6 +197,7 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
         ("shoes", "shoe_brand", "TEXT"),
         ("shoes", "shoe_color", "TEXT"),
         ("pairs", "pair_score", "REAL"),   # visual similarity of the two shoes (0-1), null for singles
+        ("pairs", "prediction_source", "TEXT"),   # 'local' | 'cloud:<backend>:<model>'
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")

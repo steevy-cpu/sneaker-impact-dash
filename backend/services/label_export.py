@@ -54,9 +54,12 @@ def _next_n(folder, color, make) -> int:
 
 
 def export_label(crop_path, *, color, make, model, make_conf, model_conf,
-                 source_photo, source_pair):
+                 source_photo, source_pair, color_conf=None,
+                 prediction_source="local"):
     """Copy one confident pair crop into label_data + write its JSON sidecar.
-    Returns the new filename, or None (skipped / already exported / failed)."""
+    `prediction_source` is "local" (auto-approved local prediction) or a cloud
+    tag like "cloud:gemini:gemini-2.5-pro". Returns the new filename, or None
+    (skipped / already exported / failed)."""
     folder = str(LABEL_DATA_DIR)
     try:
         if not os.path.exists(crop_path):
@@ -69,16 +72,18 @@ def export_label(crop_path, *, color, make, model, make_conf, model_conf,
         base = f"shoes_{col}_{mk}_{_next_n(folder, col, mk)}"
         shutil.copyfile(crop_path, os.path.join(folder, base + ".jpg"))
         meta = {
-            "filename":         base + ".jpg",
-            "make":             make,
-            "model":            model,
-            "detected_color":   color,
-            "make_confidence":  make_conf,
-            "model_confidence": model_conf,
-            "source_photo":     source_photo,
-            "source_pair":      source_pair,
-            "timestamp":        datetime.now().isoformat(timespec="seconds"),
-            "exported_by":      "dash-auto-approve",
+            "filename":          base + ".jpg",
+            "make":              make,
+            "model":             model,
+            "detected_color":    color,
+            "make_confidence":   make_conf,
+            "model_confidence":  model_conf,
+            "color_confidence":  color_conf,
+            "prediction_source": prediction_source,
+            "source_photo":      source_photo,
+            "source_pair":       source_pair,
+            "timestamp":         datetime.now().isoformat(timespec="seconds"),
+            "exported_by":       "dash-cloud" if prediction_source.startswith("cloud") else "dash-auto-approve",
         }
         with open(os.path.join(folder, base + ".json"), "w") as f:
             json.dump(meta, f, indent=2)

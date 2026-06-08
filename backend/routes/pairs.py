@@ -36,6 +36,7 @@ def pair_to_dict(row: sqlite3.Row) -> dict:
         "image_path":       row["image_path"],
         "bbox":             _json_or_none(row["bbox"]),
         "pair_score":       row["pair_score"],
+        "prediction_source": row["prediction_source"],
         "detected_color":   row["detected_color"],
         "color_confidence": row["color_confidence"],
         "make":             row["make"],
