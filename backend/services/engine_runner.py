@@ -147,6 +147,8 @@ def main():
             result["pairs"].append({
                 "image_file":       fname,
                 "bbox":             [int(x1), int(y1), int(x2), int(y2)],
+                "pair_score":       _f(getattr(seg, "pair_score", None)),
+                "is_single":        seg.label != "pair",
                 "detected_color":   color,
                 "color_confidence": _f(color_conf),
                 "make":             make,

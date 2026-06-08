@@ -196,6 +196,7 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
     for table, col, defn in [
         ("shoes", "shoe_brand", "TEXT"),
         ("shoes", "shoe_color", "TEXT"),
+        ("pairs", "pair_score", "REAL"),   # visual similarity of the two shoes (0-1), null for singles
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")

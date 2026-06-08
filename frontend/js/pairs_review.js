@@ -59,6 +59,10 @@ function cardHTML(p) {
             </div>
             <div class="pair-meta-row"><span class="pair-meta-label">From</span>
                 <span class="pair-meta-val text-sm">${esc(p.table_photo_id)}</span></div>
+            <div class="pair-meta-row"><span class="pair-meta-label">Pair match</span>
+                <span class="pair-meta-val">${p.pair_score != null
+                    ? "🔗 " + conf(p.pair_score) + " visual similarity"
+                    : "<span class='text-muted'>single shoe (unmatched)</span>"}</span></div>
             <div class="pair-meta-row"><span class="pair-meta-label">Color</span>
                 <span class="pair-meta-val">${esc(p.detected_color || "—")}
                     <span class="text-muted text-xs">(${conf(p.color_confidence)})</span></span></div>

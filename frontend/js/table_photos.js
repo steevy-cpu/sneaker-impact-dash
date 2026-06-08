@@ -105,7 +105,7 @@ async function openDetail(id) {
             ${p.image_path ? `<img src="${esc(p.image_path)}" alt="pair">` : `<div class="tp-pair-noimg">—</div>`}
             <div class="tp-pair-info">
                 <div>${esc(p.detected_color || "—")} · <b>${esc(p.final_make || p.make || "—")}</b> / ${esc(p.final_model || p.model || "—")}</div>
-                <div class="text-xs text-muted">${reviewStatusBadgeHTML(p.review_status)}</div>
+                <div class="text-xs text-muted">${p.pair_score != null ? "🔗 " + Math.round(p.pair_score * 100) + "% match · " : "single · "}${reviewStatusBadgeHTML(p.review_status)}</div>
             </div>
         </div>`).join("") || `<div class="empty-state">No pairs ${t.status === "completed" ? "detected" : "yet"}.</div>`;
 

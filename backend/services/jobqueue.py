@@ -111,12 +111,12 @@ class EngineWorker:
 
                 conn.execute(
                     """INSERT INTO pairs (
-                        id, table_photo_id, image_path, bbox,
+                        id, table_photo_id, image_path, bbox, pair_score,
                         detected_color, color_confidence,
                         make, make_confidence, model, model_confidence,
                         model_sources, review_status, final_make, final_model, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (pid, tp_id, img_url, json.dumps(p.get("bbox")),
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (pid, tp_id, img_url, json.dumps(p.get("bbox")), p.get("pair_score"),
                      p.get("detected_color"), p.get("color_confidence"),
                      make, mk_c, model, md_c,
                      json.dumps(p.get("model_sources") or []),
