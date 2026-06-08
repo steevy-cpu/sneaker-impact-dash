@@ -86,7 +86,10 @@ LABEL_DATA_DIR = Path(os.getenv("LABEL_DATA_DIR", str(ENGINE_DIR / "label_data")
 LOCAL_CONF_MIN   = float(os.getenv("LOCAL_CONF_MIN", "0.80"))  # keep local only if all 3 >= this
 CLOUD_BACKEND    = os.getenv("CLOUD_BACKEND", "gemini")        # "gemini" | "none"
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+# Default to Flash: it has a usable FREE tier and is cheap + capable for shoe ID.
+# gemini-2.5-pro is more accurate but has ~no free quota (instant 429) — set it
+# explicitly once billing is on.
+GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_URL       = os.getenv("GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta")
 CLOUD_TIMEOUT    = int(os.getenv("CLOUD_TIMEOUT", "30"))       # per-image cloud call (s)
 # Cloud fallback is active only when explicitly enabled AND a key is present.

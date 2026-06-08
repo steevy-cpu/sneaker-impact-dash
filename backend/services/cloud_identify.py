@@ -16,6 +16,7 @@ keeps the local prediction. Never raises.
 """
 import base64
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -81,13 +82,24 @@ def _gemini(crop_path):
         },
     }
     url = f"{GEMINI_URL}/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    req = urllib.request.Request(
-        url, data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=CLOUD_TIMEOUT) as r:
-        resp = json.loads(r.read().decode())
-    text = resp["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(text)
+    data = json.dumps(body).encode()
+    # Retry transient throttling/overload (429 rate limit, 503 overloaded) with a
+    # short backoff. Free-tier per-minute limits are common; a couple of waits
+    # recover many calls. A persistent quota error still falls through to None.
+    for attempt in range(3):
+        req = urllib.request.Request(
+            url, data=data,
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=CLOUD_TIMEOUT) as r:
+                resp = json.loads(r.read().decode())
+            text = resp["candidates"][0]["content"]["parts"][0]["text"]
+            return json.loads(text)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 503) and attempt < 2:
+                time.sleep(5 * (attempt + 1))    # 5s, then 10s
+                continue
+            raise
 
 
 def identify(crop_path):
