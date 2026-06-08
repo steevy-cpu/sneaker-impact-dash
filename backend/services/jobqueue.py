@@ -13,7 +13,8 @@ import threading
 from datetime import datetime
 
 from backend.config import (ENGINE_ENABLED, ENGINE_POLL_SECONDS, IMAGES_DIR,
-                            PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN)
+                            PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN,
+                            LOCAL_COLOR_CONF_MIN)
 from backend.database import get_connection
 from backend.services.cloud_identify import cloud_enabled
 from backend.services.cloud_identify import identify as cloud_identify
@@ -108,26 +109,31 @@ class EngineWorker:
                 sources = p.get("model_sources") or []
                 source = "local"
 
-                # HYBRID: keep the local prediction only if color, make AND model
-                # are each confident (>= LOCAL_CONF_MIN) and not "unknown".
-                # Otherwise ask the cloud model and use its prediction instead.
+                # HYBRID: keep the local prediction only if MAKE and MODEL are
+                # both confident (>= LOCAL_CONF_MIN) and not "unknown". Color is
+                # NOT part of this gate — it's always taken locally (below).
+                # Otherwise ask the cloud model for a better brand + model.
                 local_good = (
-                    _known(color, color_c, LOCAL_CONF_MIN)
-                    and _known(make, mk_c, LOCAL_CONF_MIN)
+                    _known(make, mk_c, LOCAL_CONF_MIN)
                     and _known(model, md_c, LOCAL_CONF_MIN)
                 )
                 if not local_good and img_file and cloud_enabled():
                     cloud = cloud_identify(str(PAIRS_DIR / img_file))
                     if cloud:
-                        color, color_c = cloud["color"], cloud["color_confidence"]
-                        make,  mk_c     = cloud["brand"], cloud["brand_confidence"]
-                        model, md_c     = cloud["model"], cloud["model_confidence"]
+                        # Color stays local; the cloud only supplies brand + model.
+                        make,  mk_c  = cloud["brand"], cloud["brand_confidence"]
+                        model, md_c  = cloud["model"], cloud["model_confidence"]
                         sources = [cloud["source"]]
                         source = cloud["source"]
                         # Reflect the cloud answer in the Airtable brand summary.
                         p["make"], p["model"] = make, model
                         print(f"[worker] {tp_id} pair {idx}: cloud -> "
-                              f"{make}/{model} (color {color})")
+                              f"{make}/{model}")
+
+                # Color is local-only; accept it above its own lower floor, else
+                # mark unknown (don't let a weak color guess into the data/name).
+                if not _known(color, color_c, LOCAL_COLOR_CONF_MIN):
+                    color = "unknown"
 
                 used_cloud = source != "local"
                 # Auto-approve high-confidence pairs (local or cloud): no human

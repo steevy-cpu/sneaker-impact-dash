@@ -83,7 +83,10 @@ LABEL_DATA_DIR = Path(os.getenv("LABEL_DATA_DIR", str(ENGINE_DIR / "label_data")
 # below LOCAL_CONF_MIN, or any is "unknown"), fall back to a CLOUD vision model
 # for a better {color, brand, model}. The cloud prediction replaces the local
 # one and the crop + prediction are saved to label_data for future training.
-LOCAL_CONF_MIN   = float(os.getenv("LOCAL_CONF_MIN", "0.80"))  # keep local only if all 3 >= this
+# Cloud fallback is gated on MAKE + MODEL only (color rarely hits a high bar and
+# isn't worth a cloud call). Color is always kept local, with its own lower floor.
+LOCAL_CONF_MIN       = float(os.getenv("LOCAL_CONF_MIN", "0.80"))        # make+model gate
+LOCAL_COLOR_CONF_MIN = float(os.getenv("LOCAL_COLOR_CONF_MIN", "0.50"))  # accept local color >= this
 CLOUD_BACKEND    = os.getenv("CLOUD_BACKEND", "gemini")        # "gemini" | "openai" | "none"
 CLOUD_TIMEOUT    = int(os.getenv("CLOUD_TIMEOUT", "30"))       # per-image cloud call (s)
 # -- Gemini --
