@@ -193,6 +193,11 @@ const api = {
         return apiFetch(`/api/table-photos/${encodeURIComponent(id)}/reprocess`, { method: "POST" });
     },
 
+    /** Delete a table photo + its pairs, crops, and Airtable outbox row. */
+    deleteTablePhoto(id) {
+        return apiFetch(`/api/table-photos/${encodeURIComponent(id)}`, { method: "DELETE" });
+    },
+
     /** List pairs (filters: table_photo_id, review_status, page, page_size). */
     getPairs(params = {}) {
         const qs = new URLSearchParams(params).toString();
@@ -256,5 +261,10 @@ const api = {
             method: "PATCH",
             body:   JSON.stringify(data),
         });
+    },
+
+    /** Delete a single pair (+ its crop file). */
+    deletePair(id) {
+        return apiFetch(`/api/pairs/${encodeURIComponent(id)}`, { method: "DELETE" });
     },
 };

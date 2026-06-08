@@ -76,6 +76,7 @@ function cardHTML(p) {
                 <input class="form-input pair-model" type="text" value="${esc(p.model || "")}" placeholder="model / silhouette">
             </div>
             <div class="pair-actions">
+                <button class="btn-danger pair-delete" type="button">Delete</button>
                 <button class="btn-secondary pair-skip" type="button">Skip</button>
                 <button class="btn-success pair-approve" type="button">✅ Approve &amp; Save</button>
             </div>
@@ -97,6 +98,7 @@ function wireCard(card) {
     const id      = card.dataset.id;
     const approve = card.querySelector(".pair-approve");
     const skip    = card.querySelector(".pair-skip");
+    const del     = card.querySelector(".pair-delete");
 
     approve.addEventListener("click", async () => {
         const final_make  = card.querySelector(".pair-make").value.trim();
@@ -118,6 +120,20 @@ function wireCard(card) {
 
     // "Skip" just hides it this session (leaves it PENDING in the DB).
     skip.addEventListener("click", () => removeCard(card));
+
+    // "Delete" permanently removes the pair (DB row + crop file).
+    del.addEventListener("click", async () => {
+        if (!confirm(`Delete pair ${id}?\n\nThis permanently removes the pair and its crop. This cannot be undone.`)) return;
+        del.disabled = true; del.textContent = "Deleting…";
+        try {
+            await api.deletePair(id);
+            removeCard(card);
+            showToast("Deleted " + id, "info", 1800);
+        } catch (err) {
+            showToast(err.message || "Delete failed", "error", 3000);
+            del.disabled = false; del.textContent = "Delete";
+        }
+    });
 }
 
 function removeCard(card) {

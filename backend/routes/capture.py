@@ -283,3 +283,36 @@ def reprocess_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)
             except OSError:
                 pass
     return {"id": tp_id, "status": "pending"}
+
+
+@router.delete("/table-photos/{tp_id}",
+               summary="Delete a table photo, its pairs, crops, and outbox row")
+def delete_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)):
+    """Permanently remove a table photo and everything tied to it: every child
+    pair row (+ crop files), the durable Airtable outbox row (so an orphaned
+    sync can't keep retrying), the table-photo DB row, and the photo file on
+    disk. No FK has ON DELETE CASCADE, so cleanup is explicit and ordered:
+    children first, then the outbox, then the parent."""
+    row = conn.execute(
+        "SELECT id, image_path FROM table_photos WHERE id = ?", (tp_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Table photo '{tp_id}' not found")
+
+    pair_rows = conn.execute(
+        "SELECT image_path FROM pairs WHERE table_photo_id = ?", (tp_id,)
+    ).fetchall()
+    conn.execute("DELETE FROM pairs WHERE table_photo_id = ?", (tp_id,))
+    conn.execute("DELETE FROM airtable_outbox WHERE table_photo_id = ?", (tp_id,))
+    conn.execute("DELETE FROM table_photos WHERE id = ?", (tp_id,))
+    conn.commit()
+
+    # Best-effort cleanup of the table photo + all pair crop files on disk.
+    paths = [row["image_path"]] + [p["image_path"] for p in pair_rows]
+    for path in paths:
+        if path:
+            try:
+                (IMAGES_DIR / path.replace("/images/", "", 1)).unlink()
+            except OSError:
+                pass
+    return {"deleted": True, "id": tp_id, "pairs_removed": len(pair_rows)}

@@ -86,6 +86,7 @@ async function openDetail(id) {
     body.innerHTML = `<div class="loading-state">Loading…</div>`;
     modal.classList.add("open");
     document.getElementById("tp-reprocess").dataset.id = id;
+    document.getElementById("tp-delete").dataset.id = id;
 
     let t;
     try { t = await api.getTablePhoto(id); }
@@ -137,6 +138,19 @@ document.getElementById("tp-reprocess").addEventListener("click", async (e) => {
         loadList();
     } catch (err) {
         showToast("Reprocess failed: " + err.message, "error", 2800);
+    } finally { e.target.disabled = false; }
+});
+document.getElementById("tp-delete").addEventListener("click", async (e) => {
+    const id = e.target.dataset.id;
+    if (!confirm(`Delete table photo ${id}?\n\nThis permanently removes the photo, all its detected pairs, and its Airtable sync queue entry. This cannot be undone.`)) return;
+    e.target.disabled = true;
+    try {
+        const res = await api.deleteTablePhoto(id);
+        showToast(`Deleted ${id} (${res.pairs_removed} pair${res.pairs_removed === 1 ? "" : "s"})`, "info", 2200);
+        document.getElementById("tp-modal").classList.remove("open");
+        loadList();
+    } catch (err) {
+        showToast("Delete failed: " + err.message, "error", 2800);
     } finally { e.target.disabled = false; }
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadList(); });

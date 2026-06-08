@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from backend.config import IMAGES_DIR
 from backend.database import get_db
 from backend.models import PairReviewUpdate
 
@@ -116,3 +117,29 @@ def review_pair(
     )
     conn.commit()
     return pair_to_dict(conn.execute("SELECT * FROM pairs WHERE id = ?", (pair_id,)).fetchone())
+
+
+@router.delete("/{pair_id}", summary="Delete a single pair (+ its crop file)")
+def delete_pair(pair_id: str, conn: sqlite3.Connection = Depends(get_db)):
+    """Permanently remove one pair: its DB row and crop file on disk. Also
+    decrements the parent table photo's `num_pairs` so the count stays honest.
+    The parent table photo and its Airtable outbox row are left untouched."""
+    row = conn.execute(
+        "SELECT image_path, table_photo_id FROM pairs WHERE id = ?", (pair_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Pair '{pair_id}' not found")
+
+    conn.execute("DELETE FROM pairs WHERE id = ?", (pair_id,))
+    conn.execute(
+        "UPDATE table_photos SET num_pairs = MAX(0, num_pairs - 1) WHERE id = ?",
+        (row["table_photo_id"],),
+    )
+    conn.commit()
+
+    if row["image_path"]:
+        try:
+            (IMAGES_DIR / row["image_path"].replace("/images/", "", 1)).unlink()
+        except OSError:
+            pass
+    return {"deleted": True, "id": pair_id}
