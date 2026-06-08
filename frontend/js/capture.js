@@ -88,7 +88,7 @@
         return true;
     }
     function resetFields() {
-        capWeight.value = "0"; capGood.value = "0"; capEol.value = "0"; capCasuals.value = "0";
+        capWeight.value = ""; capGood.value = ""; capEol.value = ""; capCasuals.value = "";
         barcodeInput.value = "";
         barcodeStatus.textContent = "Ready for barcode scanning…";
         shipmentPreview.style.display = "none"; lastLookup = "";
@@ -185,7 +185,7 @@
                 barcodeStatus.textContent = "Scanned: " + code;
                 showToast("BARCODE SCANNED: " + code, "barcode", 1500);
                 lookupShipment(code);
-                capGood.focus();           // after a scan, move on to the counts
+                capWeight.focus();         // after a scan, jump straight to Weight; Enter/Tab walks the rest
             } else {
                 barcodeStatus.textContent = "Barcode too short (min 4 chars)";
             }
@@ -264,6 +264,22 @@
     window.addEventListener("contextmenu", (e) => {
         const t = getTrigger();
         if (learning || (t && t.kind === "mouse" && t.button === 2)) e.preventDefault();
+    });
+
+    /* ---- Enter/Tab advance through the box-data fields ------------------ */
+    // After the barcode scan drops focus on Weight, Enter (or Tab) walks the
+    // worker down Weight → Good → End of Life → Casuals without reaching for
+    // the mouse. Enter past the last field just blurs (it does NOT auto-send —
+    // sending is the deliberate USB-button / Capture & Send press).
+    const BOX_ORDER = [capWeight, capGood, capEol, capCasuals];
+    BOX_ORDER.forEach((el, i) => {
+        el.addEventListener("keydown", (e) => {
+            if (e.key !== "Enter") return;     // Tab is handled natively by the browser
+            e.preventDefault();
+            const next = BOX_ORDER[i + 1];
+            if (next) next.focus();
+            else el.blur();
+        });
     });
 
     /* ---- Wiring --------------------------------------------------------- */
