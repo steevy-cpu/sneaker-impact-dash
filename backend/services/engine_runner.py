@@ -78,7 +78,7 @@ def main():
             config.MODEL_OLLAMA_TIMEOUT = args.model_timeout
 
         from segment_utils import build_segmenter
-        from pair_utils import pair_shoes
+        from pair_utils import pair_shoes, pair_shoes_visual
         from brand_utils import build_brand_classifier
         from model_search import build_model_identifier
         try:
@@ -99,7 +99,20 @@ def main():
             area = h * w
             segs = [s for s in segs if s.area() >= min_frac * area]
         if getattr(config, "SEGMENT_PAIR", True):
-            segs = pair_shoes(segs, getattr(config, "SEGMENT_PAIR_MAX_GAP", 1.2))
+            method = getattr(config, "SEGMENT_PAIR_METHOD", "visual")
+            if method == "visual":
+                # Pair by appearance (DINOv2/CLIP) so shoes need not be tied.
+                # Reuses the same embedder the model-ID index uses.
+                from embedder_utils import build_image_embedder
+                embedder = build_image_embedder(config)
+                segs = pair_shoes_visual(
+                    image, segs, embedder,
+                    spatial_weight=getattr(config, "SEGMENT_PAIR_SPATIAL_WEIGHT", 0.15),
+                    min_sim=getattr(config, "SEGMENT_PAIR_MIN_SIM", 0.5),
+                    log=print,                          # stdout is redirected to stderr
+                )
+            else:
+                segs = pair_shoes(segs, getattr(config, "SEGMENT_PAIR_MAX_GAP", 1.2))
 
         brander = build_brand_classifier(config)
         modeler = build_model_identifier(config)
