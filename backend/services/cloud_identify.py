@@ -21,7 +21,8 @@ import urllib.error
 import urllib.request
 
 from backend.config import (CLOUD_BACKEND, CLOUD_IDENTIFY_ENABLED, CLOUD_TIMEOUT,
-                            GEMINI_API_KEY, GEMINI_MODEL, GEMINI_URL)
+                            GEMINI_API_KEY, GEMINI_MODEL, GEMINI_URL,
+                            OPENAI_API_KEY, OPENAI_MODEL, OPENAI_URL)
 
 _PROMPT = (
     "You are identifying ONE used sneaker from a cropped, top-down photo taken "
@@ -102,6 +103,53 @@ def _gemini(crop_path):
             raise
 
 
+def _openai(crop_path):
+    """One OpenAI chat.completions call on the crop. Returns parsed dict or None.
+
+    Uses Structured Outputs (response_format json_schema, strict) so the model
+    must return exactly our shape. Image is sent as a base64 data URL."""
+    with open(crop_path, "rb") as fh:
+        b64 = base64.b64encode(fh.read()).decode("ascii")
+    body = {
+        "model": OPENAI_MODEL,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": _PROMPT},
+                {"type": "image_url",
+                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            ],
+        }],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "shoe_id",
+                "strict": True,
+                "schema": {**_SCHEMA, "additionalProperties": False},
+            },
+        },
+    }
+    url = f"{OPENAI_URL}/chat/completions"
+    data = json.dumps(body).encode()
+    # gpt-5 is a reasoning model: don't send temperature (only the default is
+    # accepted). Retry transient throttling/overload the same way as Gemini.
+    for attempt in range(3):
+        req = urllib.request.Request(
+            url, data=data, method="POST",
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {OPENAI_API_KEY}"})
+        try:
+            with urllib.request.urlopen(req, timeout=CLOUD_TIMEOUT) as r:
+                resp = json.loads(r.read().decode())
+            text = resp["choices"][0]["message"]["content"]
+            return json.loads(text)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 500, 502, 503) and attempt < 2:
+                time.sleep(5 * (attempt + 1))
+                continue
+            raise
+
+
 def identify(crop_path):
     """Cloud-identify one shoe crop. Returns a normalized dict or None."""
     if not cloud_enabled():
@@ -109,10 +157,13 @@ def identify(crop_path):
     try:
         if CLOUD_BACKEND == "gemini":
             raw = _gemini(crop_path)
+        elif CLOUD_BACKEND == "openai":
+            raw = _openai(crop_path)
         else:
             return None
         if not isinstance(raw, dict):
             return None
+        model_id = OPENAI_MODEL if CLOUD_BACKEND == "openai" else GEMINI_MODEL
         out = {
             "color":            (raw.get("color") or "unknown").strip().lower(),
             "brand":            (raw.get("brand") or "unknown").strip(),
@@ -120,7 +171,7 @@ def identify(crop_path):
             "color_confidence": _clamp01(raw.get("color_confidence")),
             "brand_confidence": _clamp01(raw.get("brand_confidence")),
             "model_confidence": _clamp01(raw.get("model_confidence")),
-            "source":           f"cloud:{CLOUD_BACKEND}:{GEMINI_MODEL}",
+            "source":           f"cloud:{CLOUD_BACKEND}:{model_id}",
         }
         return out
     except urllib.error.HTTPError as exc:               # noqa: BLE001 - fail safe
