@@ -39,5 +39,16 @@
                 applyTheme(current === "dark" ? "light" : "dark");
             });
         }
+
+        // Mode badge: reflect the REAL backend mode (APP_MODE) instead of the
+        // hardcoded "SIMULATION MODE" placeholder. One place, every page.
+        var badge = document.getElementById("mode-badge");
+        if (badge) {
+            fetch("/api/health").then(function (r) { return r.json(); }).then(function (d) {
+                var mode = (d && d.mode) ? String(d.mode) : "actual";
+                badge.textContent = mode.toUpperCase() + " MODE";
+                badge.className = "mode-badge " + (mode === "simulation" ? "simulation" : "actual");
+            }).catch(function () { /* leave the static badge if health is unreachable */ });
+        }
     });
 }());
