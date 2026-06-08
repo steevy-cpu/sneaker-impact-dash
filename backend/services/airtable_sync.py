@@ -58,37 +58,55 @@ class AirtableSync:
         recs = self._request("GET", url).get("records", [])
         return recs[0]["id"] if recs else None
 
-    def _upsert(self, barcode, fields):
-        """Update the "Shipments Received" record matching this barcode. Returns
-        "updated", or None if no row exists for this barcode.
+    def _create(self, barcode, fields):
+        """Create a new "Shipments Received" row for this barcode. The "Barcode"
+        field is a barcode-type field: written as {text, type:'upc'} with
+        typecast=True (writable on CREATE, not on PATCH). Mirrors the old
+        ShoeSort client, which created the row on each scan. Returns the new id.
 
-        We do NOT create a row: "Barcode" is a read-only `barcode`-type field
-        (Airtable rejects writes to it -> HTTP 422), and shipments are
-        pre-imported from the FedEx invoice export — so an unmatched scan just
-        means that shipment isn't in Airtable yet, which we skip and log rather
-        than fabricate a row with no barcode."""
+        Why create: the scanned FedEx tracking numbers are auto-added to the
+        "Labels Created" table, but the box's sort results belong here in
+        "Shipments Received" — and that row only exists if something creates it.
+        The old client did; when the dash went update-only the rows stopped
+        appearing (every scan -> no_row). So we create the row on first sync."""
+        payload = {
+            "fields": {**fields, "Barcode": {"text": barcode, "type": "upc"}},
+            "typecast": True,
+        }
+        rec = self._request("POST", self.base_url, payload)
+        return rec.get("id")
+
+    def _upsert(self, barcode, fields):
+        """Update the matching "Shipments Received" row, or CREATE it if none
+        exists (mirrors the old client). Returns "updated" or "created"."""
         rid = self._find_id(barcode)
-        if not rid:
-            return None
-        self._request("PATCH", f"{self.base_url}/{rid}", {"fields": fields})
-        return "updated"
+        if rid:
+            self._request("PATCH", f"{self.base_url}/{rid}", {"fields": fields})
+            return "updated"
+        self._create(barcode, fields)
+        return "created"
 
     def push(self, match_barcode, fields):
-        """Low-level update used by the durable outbox. `match_barcode` is the
-        already-normalized key. Updates the matching shipment row with `fields`.
-        Returns one of: 'synced' (row found+updated), 'no_row' (no shipment yet —
-        retry later), 'no_barcode', 'disabled', or 'error: <msg>' (retry later).
-        Second tuple element is the Airtable record id on success, else None."""
+        """Low-level upsert used by the durable outbox. `match_barcode` is the
+        already-normalized key. Updates the matching shipment row, or creates it
+        if none exists. Returns one of: 'synced' (updated or created),
+        'no_barcode', 'disabled', or 'error: <msg>' (retry later). Second tuple
+        element is the Airtable record id on success, else None."""
         if not self.ok:
             return ("disabled", None)
         if not match_barcode:
             return ("no_barcode", None)
         try:
             rid = self._find_id(match_barcode)
-            if not rid:
+            if rid:
+                self._request("PATCH", f"{self.base_url}/{rid}", {"fields": fields})
+                return ("synced", rid)
+            # Only CREATE for a plausible tracking number (all digits, >=12) so
+            # camera/test scans (e.g. "…CAMTEST") never fabricate junk rows.
+            if not (match_barcode.isdigit() and len(match_barcode) >= 12):
                 return ("no_row", None)
-            self._request("PATCH", f"{self.base_url}/{rid}", {"fields": fields})
-            return ("synced", rid)
+            new_id = self._create(match_barcode, fields)
+            return ("synced", new_id)
         except Exception as exc:                           # noqa: BLE001 - retry later
             return (f"error: {exc}", None)
 
