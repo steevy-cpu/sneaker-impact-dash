@@ -87,6 +87,7 @@ async function openDetail(id) {
     modal.classList.add("open");
     document.getElementById("tp-reprocess").dataset.id = id;
     document.getElementById("tp-delete").dataset.id = id;
+    document.getElementById("tp-reidentify").dataset.id = id;
 
     let t;
     try { t = await api.getTablePhoto(id); }
@@ -153,6 +154,49 @@ document.getElementById("tp-delete").addEventListener("click", async (e) => {
         showToast("Delete failed: " + err.message, "error", 2800);
     } finally { e.target.disabled = false; }
 });
+// ---- Re-identify (cloud backfill of unknown brand/model) ----------------
+async function startReidentify(promise, btn, label) {
+    btn.disabled = true; btn.textContent = "Starting…";
+    try {
+        const r = await promise;
+        if (r.started) {
+            showToast(`Re-identifying ${r.count} photo${r.count === 1 ? "" : "s"} via the cloud…`, "info", 3000);
+            pollReidentify();
+        } else {
+            showToast(r.error || "Could not start", "error", 3000);
+        }
+    } catch (err) {
+        showToast("Re-identify failed: " + err.message, "error", 3000);
+    } finally { btn.disabled = false; btn.textContent = label; }
+}
+
+let reidTimer = null;
+async function pollReidentify() {
+    const el = document.getElementById("reid-status");
+    try {
+        const s = await api.reidentifyStatus();
+        if (s.running) {
+            el.textContent = `✨ re-identifying ${s.done}/${s.total} — ${s.pairs_fixed} pairs fixed`;
+            if (!reidTimer) reidTimer = setInterval(pollReidentify, 4000);
+        } else {
+            if (reidTimer) { clearInterval(reidTimer); reidTimer = null; }
+            if (s.finished_at && s.total) {
+                el.textContent = `✅ done — ${s.pairs_fixed} pairs fixed across ${s.total} photo(s)`;
+                loadList();
+            } else { el.textContent = ""; }
+        }
+    } catch (e) { /* leave status as-is */ }
+}
+
+document.getElementById("reid-all-btn").addEventListener("click", (e) =>
+    startReidentify(api.reidentifyAll(), e.currentTarget, "✨ Re-identify all unknowns"));
+document.getElementById("tp-reidentify").addEventListener("click", (e) => {
+    const id = e.currentTarget.dataset.id;
+    document.getElementById("tp-modal").classList.remove("open");
+    startReidentify(api.reidentifyPhoto(id), e.currentTarget, "✨ Re-identify unknowns");
+});
+
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadList(); });
 
 loadList();
+pollReidentify();   // reflect an in-progress run on load

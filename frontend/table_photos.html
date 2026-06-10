@@ -85,7 +85,11 @@
         <div class="card">
             <div class="card-header">
                 <span class="card-title">Captured photos</span>
-                <button class="btn-secondary" id="refresh-btn" type="button" style="padding:5px 12px;">Refresh</button>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <span id="reid-status" class="text-xs text-muted"></span>
+                    <button class="btn-secondary" id="reid-all-btn" type="button" style="padding:5px 12px;" title="Give every unknown pair a brand+model via the cloud and re-sync Airtable">✨ Re-identify all unknowns</button>
+                    <button class="btn-secondary" id="refresh-btn" type="button" style="padding:5px 12px;">Refresh</button>
+                </div>
             </div>
             <div id="tp-container"><div class="loading-state">Loading…</div></div>
         </div>
@@ -100,6 +104,7 @@
         <div class="modal-body" id="tp-modal-body"></div>
         <div class="modal-actions">
             <button class="btn-danger" id="tp-delete" type="button">Delete</button>
+            <button class="btn-secondary" id="tp-reidentify" type="button">✨ Re-identify unknowns</button>
             <button class="btn-secondary" id="tp-reprocess" type="button">Reprocess</button>
             <button class="btn-success" id="tp-close" type="button">Close</button>
         </div>
@@ -107,8 +112,8 @@
 </div>
 
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=13"></script>
+<script src="js/api.js?v=15"></script>
 <script src="js/utils.js"></script>
-<script src="js/table_photos.js?v=3"></script>
+<script src="js/table_photos.js?v=4"></script>
 </body>
 </html>

@@ -198,6 +198,17 @@ const api = {
         return apiFetch(`/api/table-photos/${encodeURIComponent(id)}`, { method: "DELETE" });
     },
 
+    /** Re-identify unknown pairs via the cloud (one photo or all), re-sync Airtable. */
+    reidentifyPhoto(id) {
+        return apiFetch(`/api/reidentify/photo/${encodeURIComponent(id)}`, { method: "POST" });
+    },
+    reidentifyAll() {
+        return apiFetch(`/api/reidentify/all`, { method: "POST" });
+    },
+    reidentifyStatus() {
+        return apiFetch(`/api/reidentify/status`);
+    },
+
     /** List pairs (filters: table_photo_id, review_status, page, page_size). */
     getPairs(params = {}) {
         const qs = new URLSearchParams(params).toString();
