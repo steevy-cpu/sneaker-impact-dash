@@ -27,15 +27,18 @@ from backend.config import (CLOUD_BACKEND, CLOUD_IDENTIFY_ENABLED, CLOUD_TIMEOUT
 _PROMPT = (
     "You are identifying ONE used sneaker from a cropped, top-down photo taken "
     "at a shoe-recycling station (used shoes, not clean product shots). "
-    "Identify, as best you can from the logo, shape and any visible text:\n"
+    "From the logo, silhouette, midsole/outsole and any visible text, determine:\n"
     "- color: the single dominant color (basic name: black, white, gray, brown, "
     "red, orange, yellow, green, blue, purple, pink).\n"
-    "- brand: the manufacturer (e.g. Nike, Adidas, New Balance, Hoka, Saucony). "
-    "Use \"unknown\" if you genuinely cannot tell.\n"
+    "- brand: the manufacturer (e.g. Nike, Adidas, New Balance, Hoka, Saucony).\n"
     "- model: the specific silhouette / model name (e.g. \"Air Jordan 1\", "
-    "\"Nike Dunk Low\", \"Adidas Superstar\"). Use \"unknown\" if unsure.\n"
-    "Give a calibrated confidence in [0,1] for each field — be honest, use low "
-    "values when guessing. Return ONLY the JSON object."
+    "\"Nike Dunk Low\", \"Adidas Superstar\").\n"
+    "IMPORTANT: NEVER answer \"unknown\" or leave a field blank. Always commit to "
+    "your single BEST GUESS for every field, even when you are not sure — then "
+    "express how sure you are in the confidence score, NOT by refusing. Give a "
+    "calibrated confidence in [0,1] per field: high when the logo/model is "
+    "clearly visible, low (e.g. 0.1-0.4) when it is mostly a guess. "
+    "Return ONLY the JSON object."
 )
 
 # Gemini structured-output schema (OpenAPI subset) -> guaranteed JSON shape.
