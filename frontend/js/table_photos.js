@@ -6,7 +6,7 @@
  * Auto-refreshes while any photo is still pending/processing (visibility-aware).
  */
 
-const TP = { pollTimer: null };
+const TP = { pollTimer: null, pairs: [], lbIndex: 0 };
 
 function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -101,14 +101,22 @@ async function openDetail(id) {
         ? `<img src="${esc(t.image_path)}" class="tp-photo" alt="table photo">`
         : `<div class="tp-photo tp-photo--none">metadata only — no image</div>`;
 
-    const pairs = (t.pairs || []).map(p => `
+    // Build the lightbox gallery from pairs that have a crop image, in order.
+    TP.pairs = (t.pairs || []).filter(p => p.image_path);
+    let lbIdx = 0;
+    const pairs = (t.pairs || []).map(p => {
+        const thumb = p.image_path
+            ? `<img src="${esc(p.image_path)}" alt="pair crop" class="tp-pair-thumb" data-lb-index="${lbIdx++}" title="Click to view full size">`
+            : `<div class="tp-pair-noimg">—</div>`;
+        return `
         <div class="tp-pair">
-            ${p.image_path ? `<img src="${esc(p.image_path)}" alt="pair">` : `<div class="tp-pair-noimg">—</div>`}
+            ${thumb}
             <div class="tp-pair-info">
                 <div>${esc(p.detected_color || "—")} · <b>${esc(p.final_make || p.make || "—")}</b> / ${esc(p.final_model || p.model || "—")}</div>
                 <div class="text-xs text-muted">${p.pair_score != null ? "🔗 " + Math.round(p.pair_score * 100) + "% match · " : "single · "}${reviewStatusBadgeHTML(p.review_status)}</div>
             </div>
-        </div>`).join("") || `<div class="empty-state">No pairs ${t.status === "completed" ? "detected" : "yet"}.</div>`;
+        </div>`;
+    }).join("") || `<div class="empty-state">No pairs ${t.status === "completed" ? "detected" : "yet"}.</div>`;
 
     body.innerHTML = `
         ${photo}
@@ -120,14 +128,68 @@ async function openDetail(id) {
             ${ship}
         </div>
         ${err}
-        <h3 class="tp-pairs-title">Detected pairs</h3>
+        <h3 class="tp-pairs-title">Detected pairs ${TP.pairs.length ? `<span class="text-xs text-muted" style="font-weight:400;">— click a crop to view it full size</span>` : ""}</h3>
         <div class="tp-pairs">${pairs}</div>`;
+}
+
+/* ---- Pair-crop lightbox ---------------------------------------------- */
+
+function renderLightbox() {
+    const p = TP.pairs[TP.lbIndex];
+    if (!p) return;
+    document.getElementById("lb-img").src = p.image_path;
+    const make  = p.final_make  || p.make  || "—";
+    const model = p.final_model || p.model || "—";
+    const match = p.pair_score != null
+        ? `🔗 ${Math.round(p.pair_score * 100)}% pair match`
+        : "single shoe";
+    document.getElementById("lb-caption").innerHTML =
+        `<div>${esc(p.detected_color || "—")} · <b>${esc(make)}</b> / ${esc(model)}</div>` +
+        `<div class="lb-count">${esc(match)} · ${TP.lbIndex + 1} of ${TP.pairs.length}</div>`;
+    // Hide nav arrows when there's only one crop.
+    const multi = TP.pairs.length > 1;
+    document.getElementById("lb-prev").style.display = multi ? "" : "none";
+    document.getElementById("lb-next").style.display = multi ? "" : "none";
+}
+
+function openLightbox(index) {
+    if (!TP.pairs.length) return;
+    TP.lbIndex = index;
+    renderLightbox();
+    document.getElementById("lb-overlay").classList.add("open");
+}
+
+function closeLightbox() {
+    document.getElementById("lb-overlay").classList.remove("open");
+}
+
+function stepLightbox(delta) {
+    const n = TP.pairs.length;
+    if (!n) return;
+    TP.lbIndex = (TP.lbIndex + delta + n) % n;   // wrap around
+    renderLightbox();
 }
 
 /* ---- Init ------------------------------------------------------------ */
 
 document.getElementById("refresh-btn").addEventListener("click", loadList);
 document.getElementById("tp-close").addEventListener("click", () => document.getElementById("tp-modal").classList.remove("open"));
+
+// Lightbox: open on crop click (delegated, since pairs re-render each open), nav + keyboard.
+document.getElementById("tp-modal-body").addEventListener("click", (e) => {
+    const thumb = e.target.closest(".tp-pair-thumb");
+    if (thumb) openLightbox(Number(thumb.dataset.lbIndex));
+});
+document.getElementById("lb-close").addEventListener("click", closeLightbox);
+document.getElementById("lb-prev").addEventListener("click", () => stepLightbox(-1));
+document.getElementById("lb-next").addEventListener("click", () => stepLightbox(1));
+document.getElementById("lb-overlay").addEventListener("click", (e) => { if (e.target.id === "lb-overlay") closeLightbox(); });
+document.addEventListener("keydown", (e) => {
+    if (!document.getElementById("lb-overlay").classList.contains("open")) return;
+    if (e.key === "Escape")     closeLightbox();
+    else if (e.key === "ArrowLeft")  stepLightbox(-1);
+    else if (e.key === "ArrowRight") stepLightbox(1);
+});
 document.getElementById("tp-modal").addEventListener("click", (e) => { if (e.target.id === "tp-modal") e.currentTarget.classList.remove("open"); });
 document.getElementById("tp-reprocess").addEventListener("click", async (e) => {
     const id = e.target.dataset.id;

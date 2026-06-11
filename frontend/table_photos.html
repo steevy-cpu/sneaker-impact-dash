@@ -6,7 +6,7 @@
     <title>Table Photos — Sneaker Impact</title>
     <script src="js/theme.js?v=2"></script>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/components.css?v=10">
+    <link rel="stylesheet" href="css/components.css?v=11">
 </head>
 <body>
 <div class="layout">
@@ -97,6 +97,17 @@
 
 </div><!-- /.layout -->
 
+<!-- Pair-crop lightbox: full-size view of each tiled/paired crop -->
+<div class="lb-overlay" id="lb-overlay" role="dialog" aria-modal="true" aria-label="Pair photo viewer">
+    <div class="lb-stage">
+        <button class="lb-close" id="lb-close" type="button" aria-label="Close">&times;</button>
+        <button class="lb-btn lb-prev" id="lb-prev" type="button" aria-label="Previous pair">&#8249;</button>
+        <img class="lb-img" id="lb-img" alt="pair crop">
+        <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="Next pair">&#8250;</button>
+        <div class="lb-caption" id="lb-caption"></div>
+    </div>
+</div>
+
 <!-- Detail modal -->
 <div class="modal-overlay" id="tp-modal" role="dialog" aria-modal="true">
     <div class="modal" style="max-width:880px;">
@@ -114,6 +125,6 @@
 <script src="js/icons.js"></script>
 <script src="js/api.js?v=15"></script>
 <script src="js/utils.js"></script>
-<script src="js/table_photos.js?v=4"></script>
+<script src="js/table_photos.js?v=5"></script>
 </body>
 </html>

@@ -1786,6 +1786,32 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
 .tp-pair img, .tp-pair-noimg { width: 56px; height: 56px; object-fit: cover; border-radius: var(--radius-sm);
   background: #0b1220; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--text-light); }
 .tp-pair-info { font-size: var(--text-sm); min-width: 0; }
+.tp-pair img.tp-pair-thumb { cursor: zoom-in; transition: transform .08s ease, box-shadow .08s ease; }
+.tp-pair img.tp-pair-thumb:hover { transform: scale(1.04); box-shadow: 0 0 0 2px var(--accent, #2563eb); }
+
+/* ---- Pair-crop lightbox (full-size view of a tiled/paired crop) ------- */
+.lb-overlay { position: fixed; inset: 0; z-index: 1000; display: none;
+  align-items: center; justify-content: center; background: rgba(3, 7, 18, .88); }
+.lb-overlay.open { display: flex; }
+.lb-stage { position: relative; max-width: 92vw; max-height: 92vh; display: flex;
+  flex-direction: column; align-items: center; gap: 12px; }
+.lb-img { max-width: 92vw; max-height: 80vh; object-fit: contain; border-radius: var(--radius-md);
+  background: #0b1220; box-shadow: 0 18px 50px rgba(0, 0, 0, .5); }
+.lb-caption { color: #e5e7eb; font-size: var(--text-sm); text-align: center; max-width: 80vw; }
+.lb-caption b { color: #fff; }
+.lb-count { color: #9ca3af; font-size: var(--text-xs); margin-top: 2px; }
+.lb-btn { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(17, 24, 39, .7);
+  color: #fff; border: 1px solid rgba(255, 255, 255, .2); border-radius: 50%; width: 44px; height: 44px;
+  font-size: 22px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.lb-btn:hover { background: rgba(37, 99, 235, .85); }
+.lb-prev { left: -56px; }
+.lb-next { right: -56px; }
+.lb-close { position: absolute; top: -44px; right: 0; background: transparent; border: none;
+  color: #e5e7eb; font-size: 30px; line-height: 1; cursor: pointer; }
+.lb-close:hover { color: #fff; }
+@media (max-width: 640px) {
+  .lb-prev { left: 4px; } .lb-next { right: 4px; }
+}
 
 /* ===================================================================
    Label Data page (curated training-set gallery)
