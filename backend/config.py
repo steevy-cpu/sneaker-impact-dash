@@ -59,9 +59,12 @@ ENGINE_RUNNER     = Path(os.getenv("ENGINE_RUNNER", BASE_DIR / "backend" / "serv
 # System Python with torch(cu128)+ultralytics+clip — NOT the dash venv.
 ENGINE_PYTHON       = os.getenv("ENGINE_PYTHON", "/usr/bin/python3")
 # Segmentation weights — must be auto-downloadable by the installed ultralytics
-# (8.3.x → the YOLO11-based "yoloe-11s-seg.pt"; the engine's own default
+# (8.3.x → the YOLO11-based yoloe-11* family; the engine's own default
 # "yoloe-26s-seg.pt" needs a newer ultralytics / a pre-placed weight).
-ENGINE_SEGMENT_MODEL = os.getenv("ENGINE_SEGMENT_MODEL", "yoloe-11s-seg.pt")
+# 11m since 2026-06-12: with SEGMENT_CONF=0.10 it scores 0.880 count-recall on
+# the hand-counted eval set vs 0.655 for 11s@0.25, at the same ~1.2s/photo
+# (tile batching absorbs the bigger model). See engine eval_tiling.py.
+ENGINE_SEGMENT_MODEL = os.getenv("ENGINE_SEGMENT_MODEL", "yoloe-11m-seg.pt")
 ENGINE_OLLAMA_MODEL = os.getenv("ENGINE_OLLAMA_MODEL", "qwen2.5vl:32b")
 ENGINE_OLLAMA_URL   = os.getenv("ENGINE_OLLAMA_URL", "http://localhost:11434")
 ENGINE_MODEL_TIMEOUT = int(os.getenv("ENGINE_MODEL_TIMEOUT", "240"))  # per-pair VLM call
@@ -88,7 +91,10 @@ LABEL_DATA_DIR = Path(os.getenv("LABEL_DATA_DIR", str(ENGINE_DIR / "label_data")
 LOCAL_CONF_MIN       = float(os.getenv("LOCAL_CONF_MIN", "0.80"))        # make+model gate
 LOCAL_COLOR_CONF_MIN = float(os.getenv("LOCAL_COLOR_CONF_MIN", "0.50"))  # accept local color >= this
 CLOUD_BACKEND    = os.getenv("CLOUD_BACKEND", "gemini")        # "gemini" | "openai" | "none"
-CLOUD_TIMEOUT    = int(os.getenv("CLOUD_TIMEOUT", "30"))       # per-image cloud call (s)
+CLOUD_TIMEOUT    = int(os.getenv("CLOUD_TIMEOUT", "90"))       # per-image cloud call (s).
+# 90s not 30: gemini-2.5-pro is a reasoning model and regularly thinks past 30s;
+# every timeout silently left that pair on its "unknown" local guess. Only the
+# background worker waits on this — no web request ever blocks on a cloud call.
 # -- Gemini --
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
 # Default to Flash: it has a usable FREE tier and is cheap + capable for shoe ID.
