@@ -90,6 +90,8 @@ def _gemini(crop_path):
     # Retry transient throttling/overload (429 rate limit, 503 overloaded) with a
     # short backoff. Free-tier per-minute limits are common; a couple of waits
     # recover many calls. A persistent quota error still falls through to None.
+    # Read timeouts retry too: gemini-2.5-pro is a reasoning model that can
+    # think past even the long CLOUD_TIMEOUT; one more attempt usually lands.
     for attempt in range(3):
         req = urllib.request.Request(
             url, data=data,
@@ -103,6 +105,12 @@ def _gemini(crop_path):
             if exc.code in (429, 503) and attempt < 2:
                 time.sleep(5 * (attempt + 1))    # 5s, then 10s
                 continue
+            raise
+        except (TimeoutError, urllib.error.URLError) as exc:
+            timed_out = isinstance(exc, TimeoutError) or isinstance(
+                getattr(exc, "reason", None), TimeoutError)
+            if timed_out and attempt < 2:
+                continue                         # fresh attempt right away
             raise
 
 

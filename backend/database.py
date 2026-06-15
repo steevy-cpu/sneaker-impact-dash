@@ -7,6 +7,8 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.row_factory = sqlite3.Row   # rows behave like dicts: row["column"]
     conn.execute("PRAGMA journal_mode=WAL")   # better concurrent read performance
+    conn.execute("PRAGMA busy_timeout=5000")  # wait for the worker's writes
+                                              # instead of failing SQLITE_BUSY
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -198,6 +200,8 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
         ("shoes", "shoe_color", "TEXT"),
         ("pairs", "pair_score", "REAL"),   # visual similarity of the two shoes (0-1), null for singles
         ("pairs", "prediction_source", "TEXT"),   # 'local' | 'cloud:<backend>:<model>'
+        ("table_photos", "claimed_at", "TEXT"),   # when a worker claimed the job; lets the
+                                                  # stale sweeper re-queue orphaned 'processing' rows
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")

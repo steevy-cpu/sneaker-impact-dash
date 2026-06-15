@@ -29,12 +29,34 @@ _SAFE_NAME = re.compile(r"^[\w.\-]+\.jpg$")
 _IMG_URL = "/label_images"
 
 
+# Parsed-entries cache. The folder only changes when the worker exports a new
+# label, the re-identify backfill rewrites a sidecar, or someone deletes a
+# crop — so a stat-only scan (count + newest mtime) detects staleness without
+# opening every JSON on each page view.
+_cache = {"key": None, "entries": []}
+
+
+def _folder_key(folder):
+    n, newest = 0, 0
+    with os.scandir(folder) as it:
+        for de in it:
+            n += 1
+            newest = max(newest, de.stat().st_mtime_ns)
+    return (n, newest)
+
+
 def _load_entries():
     """Read every <name>.jpg in LABEL_DATA_DIR, attaching its .json sidecar
     metadata when present. Newest first (by timestamp, then filename)."""
     folder = str(LABEL_DATA_DIR)
     if not os.path.isdir(folder):
         return []
+    try:
+        key = _folder_key(folder)
+        if key is not None and key == _cache["key"]:
+            return _cache["entries"]
+    except OSError:                                      # fail safe: just rebuild
+        key = None
     entries = []
     for fn in os.listdir(folder):
         if not fn.lower().endswith(".jpg"):
@@ -61,6 +83,8 @@ def _load_entries():
             "exported_by":      meta.get("exported_by"),
         })
     entries.sort(key=lambda e: (e.get("timestamp") or "", e["filename"]), reverse=True)
+    if key is not None:
+        _cache["key"], _cache["entries"] = key, entries
     return entries
 
 

@@ -10,9 +10,11 @@ Single worker initially (models load once per subprocess; bounds GPU/VRAM use).
 """
 import json
 import threading
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
-from backend.config import (ENGINE_ENABLED, ENGINE_POLL_SECONDS, IMAGES_DIR,
+from backend.config import (ENGINE_ENABLED, ENGINE_JOB_TIMEOUT,
+                            ENGINE_POLL_SECONDS, IMAGES_DIR,
                             PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN,
                             LOCAL_COLOR_CONF_MIN)
 from backend.database import get_connection
@@ -59,12 +61,67 @@ class EngineWorker:
     # -- internals --------------------------------------------------------
 
     def _run(self):
+        last_sweep = 0.0
         while not self._stop.is_set():
-            job = self._claim_one()
+            # Claiming must never kill the thread (e.g. a transient
+            # "database is locked"): one dead worker silently orphans every
+            # job it would have run, with nothing in the journal.
+            try:
+                if self._paused():
+                    self._stop.wait(ENGINE_POLL_SECONDS)
+                    continue
+                if time.monotonic() - last_sweep > 300:
+                    self._recover_stale()
+                    last_sweep = time.monotonic()
+                job = self._claim_one()
+            except Exception as exc:                   # noqa: BLE001
+                print(f"[worker] claim/sweep error: {exc}", flush=True)
+                self._stop.wait(ENGINE_POLL_SECONDS)
+                continue
             if not job:
                 self._stop.wait(ENGINE_POLL_SECONDS)
                 continue
             self._process(job)
+
+    def _paused(self):
+        """Operational pause switch — lets maintenance (model swaps, GPU work)
+        stop NEW claims without touching captures or in-flight jobs:
+            UPDATE app_config SET value='\"1\"' WHERE key='worker_paused'
+        (any value other than "1"/missing = running). Checked every poll."""
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT value FROM app_config WHERE key = 'worker_paused'"
+            ).fetchone()
+            return bool(row) and json.loads(row["value"]) in ("1", 1, True)
+        except Exception:                              # noqa: BLE001 - fail open
+            return False
+        finally:
+            conn.close()
+
+    def _recover_stale(self):
+        """Re-queue 'processing' rows whose claim is older than the engine
+        timeout — orphans left by a service restart mid-job or a worker that
+        died without marking the job failed. claimed_at IS NULL covers rows
+        claimed before that column existed. Resetting to 'pending' is safe:
+        pairs are only committed at the end of a successful run, so an
+        orphaned job has no pair rows to duplicate."""
+        conn = get_connection()
+        try:
+            cutoff = (datetime.now()
+                      - timedelta(seconds=ENGINE_JOB_TIMEOUT + 120)).isoformat()
+            cur = conn.execute(
+                "UPDATE table_photos SET status = 'pending', claimed_at = NULL "
+                "WHERE status = 'processing' "
+                "AND (claimed_at IS NULL OR claimed_at < ?)",
+                (cutoff,),
+            )
+            conn.commit()
+            if cur.rowcount:
+                print(f"[worker] re-queued {cur.rowcount} stale "
+                      f"'processing' job(s).", flush=True)
+        finally:
+            conn.close()
 
     def _claim_one(self):
         """Atomically claim the oldest pending photo (pending -> processing)."""
@@ -78,9 +135,9 @@ class EngineWorker:
             if not row:
                 return None
             cur = conn.execute(
-                "UPDATE table_photos SET status = 'processing' "
+                "UPDATE table_photos SET status = 'processing', claimed_at = ? "
                 "WHERE id = ? AND status = 'pending'",
-                (row["id"],),
+                (datetime.now().isoformat(), row["id"]),
             )
             conn.commit()
             if cur.rowcount == 0:
@@ -97,10 +154,25 @@ class EngineWorker:
             fs_path = _image_fs_path(job["image_path"])
             pairs = process_table_photo(tp_id, str(fs_path))
 
+            # Phase 1 — compute everything WITHOUT touching the DB. Cloud
+            # identify calls take seconds each; doing them inside a write
+            # transaction held the lock for minutes and starved the other
+            # service's worker ("database is locked"). All writes happen in
+            # one short transaction at the end.
             now = datetime.now().isoformat()
             approved = 0
+            prepared = []
             for idx, p in enumerate(pairs, 1):
-                pid = generate_pair_id(conn)
+                # Heartbeat: the cloud phase can legitimately run long on a
+                # big photo (90s timeout x retries x pairs can exceed the
+                # stale sweeper's cutoff). Refreshing the claim per pair keeps
+                # the sweeper from re-queueing a job that is still alive —
+                # a single instant autocommit write, no transaction held.
+                conn.execute(
+                    "UPDATE table_photos SET claimed_at = ? WHERE id = ?",
+                    (datetime.now().isoformat(), tp_id),
+                )
+                conn.commit()
                 img_file = p.get("image_file")
                 img_url = f"/images/pairs/{img_file}" if img_file else None
                 color, color_c = p.get("detected_color"), p.get("color_confidence")
@@ -146,15 +218,8 @@ class EngineWorker:
                 final_make = make if confident else None
                 final_model = model if confident else None
 
-                conn.execute(
-                    """INSERT INTO pairs (
-                        id, table_photo_id, image_path, bbox, pair_score,
-                        detected_color, color_confidence,
-                        make, make_confidence, model, model_confidence,
-                        model_sources, review_status, final_make, final_model,
-                        prediction_source, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (pid, tp_id, img_url, json.dumps(p.get("bbox")), p.get("pair_score"),
+                prepared.append(
+                    (tp_id, img_url, json.dumps(p.get("bbox")), p.get("pair_score"),
                      color, color_c, make, mk_c, model, md_c,
                      json.dumps(sources),
                      review_status, final_make, final_model, source, now),
@@ -171,6 +236,22 @@ class EngineWorker:
                                  make_conf=mk_c, model_conf=md_c, color_conf=color_c,
                                  source_photo=tp_id, source_pair=idx,
                                  prediction_source=source)
+
+            # Phase 2 — all DB writes in one short transaction.
+            # generate_pair_id reads the table's max ID, so it must run at
+            # insert time (each insert is visible to the next on this conn).
+            for values in prepared:
+                pid = generate_pair_id(conn)
+                conn.execute(
+                    """INSERT INTO pairs (
+                        id, table_photo_id, image_path, bbox, pair_score,
+                        detected_color, color_confidence,
+                        make, make_confidence, model, model_confidence,
+                        model_sources, review_status, final_make, final_model,
+                        prediction_source, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (pid, *values),
+                )
             conn.execute(
                 "UPDATE table_photos SET status = 'completed', num_pairs = ?, "
                 "processed_at = ?, error_message = NULL WHERE id = ?",
@@ -203,9 +284,11 @@ class EngineWorker:
                     (str(exc)[:500], tp_id),
                 )
                 conn.commit()
-            except Exception:                          # noqa: BLE001
-                pass
-            print(f"[worker] {tp_id}: FAILED — {exc}")
+            except Exception as exc2:                  # noqa: BLE001
+                # Job stays 'processing'; the stale sweeper re-queues it later.
+                print(f"[worker] {tp_id}: could not mark failed: {exc2}",
+                      flush=True)
+            print(f"[worker] {tp_id}: FAILED — {exc}", flush=True)
         finally:
             conn.close()
 
