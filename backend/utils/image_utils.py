@@ -34,6 +34,23 @@ def get_table_photo_url(table_photo_id: str) -> str:
     return f"/images/table_photos/{table_photo_id}.jpg"
 
 
+def get_table_photo_thumb_url(table_photo_id: str) -> str:
+    """URL for the thumbnail of a whole-table photo (max side 1024px).
+    The review modal shows the photo at ~340px tall; loading the multi-MB
+    original there is what made the Table Photos modal feel slow."""
+    return f"/images/table_photos/thumbs/{table_photo_id}.jpg"
+
+
+def make_table_photo_thumb(src_path, thumb_path, max_side: int = 1024):
+    """Write a JPEG thumbnail (longest side <= max_side) next to the original.
+    Pillow-CPU-bound: call from a threadpool/worker, not the event loop."""
+    from PIL import Image
+    img = Image.open(src_path).convert("RGB")
+    img.thumbnail((max_side, max_side))
+    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(thumb_path, "JPEG", quality=80)
+
+
 def get_pair_url(pair_id: str) -> str:
     """URL for a stored cropped pair image (served by the /images mount)."""
     return f"/images/pairs/{pair_id}.jpg"

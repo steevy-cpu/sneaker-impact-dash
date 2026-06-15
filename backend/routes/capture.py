@@ -21,13 +21,16 @@ from typing import Optional
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      UploadFile)
+from fastapi.concurrency import run_in_threadpool
 
 from backend.config import IMAGES_DIR, TABLE_PHOTOS_DIR
 from backend.database import get_db
 from backend.models import MetadataCreate
 from backend.routes.pairs import pair_to_dict
 from backend.utils.id_generator import generate_table_photo_id
-from backend.utils.image_utils import get_table_photo_url
+from backend.utils.image_utils import (get_table_photo_thumb_url,
+                                       get_table_photo_url,
+                                       make_table_photo_thumb)
 
 router = APIRouter(prefix="/api", tags=["Capture"])
 
@@ -36,6 +39,13 @@ router = APIRouter(prefix="/api", tags=["Capture"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _thumb_path_or_none(tp_id: str, image_path):
+    """Thumb URL when the file exists (older photos may not have one yet)."""
+    if image_path and (TABLE_PHOTOS_DIR / "thumbs" / f"{tp_id}.jpg").exists():
+        return get_table_photo_thumb_url(tp_id)
+    return None
+
+
 def table_photo_to_dict(row: sqlite3.Row) -> dict:
     info = row["shipment_info"]
     return {
@@ -43,6 +53,7 @@ def table_photo_to_dict(row: sqlite3.Row) -> dict:
         "batch_id":            row["batch_id"],
         "operator_id":         row["operator_id"],
         "image_path":          row["image_path"],
+        "thumb_path":          _thumb_path_or_none(row["id"], row["image_path"]),
         "barcode":             row["barcode"],
         "weight_of_box":       row["weight_of_box"],
         "total_good_sneakers": row["total_good_sneakers"],
@@ -161,10 +172,13 @@ async def capture(
         raise HTTPException(status_code=400, detail="Empty image upload")
 
     # Validate it is a real image before storing (Pillow). verify() consumes the
-    # file object, so we re-open from the bytes to actually save it.
+    # file object, so we re-open from the bytes to actually save it. Pillow is
+    # CPU-bound, so it runs in the threadpool: this is an async handler on a
+    # single-worker uvicorn, and decoding a multi-MB photo on the event loop
+    # stalls every other request for the duration.
     from PIL import Image
     try:
-        Image.open(BytesIO(raw)).verify()
+        await run_in_threadpool(lambda: Image.open(BytesIO(raw)).verify())
     except Exception:
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid image")
 
@@ -172,16 +186,28 @@ async def capture(
     TABLE_PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
     dest = TABLE_PHOTOS_DIR / f"{tp_id}.jpg"
     try:
-        Image.open(BytesIO(raw)).convert("RGB").save(dest, "JPEG", quality=90)
+        await run_in_threadpool(
+            lambda: Image.open(BytesIO(raw)).convert("RGB").save(
+                dest, "JPEG", quality=90))
     except Exception as exc:                       # pragma: no cover - disk/codec
         raise HTTPException(status_code=500, detail=f"Could not store image: {exc}")
+
+    # Thumbnail for the review modal (best-effort: the full photo is the
+    # source of truth, a missing thumb just falls back to it in the UI).
+    try:
+        await run_in_threadpool(
+            make_table_photo_thumb, dest, TABLE_PHOTOS_DIR / "thumbs" / f"{tp_id}.jpg")
+    except Exception as exc:                       # noqa: BLE001
+        print(f"[capture] thumb generation failed for {tp_id}: {exc}", flush=True)
 
     _insert_table_photo(
         conn, tp_id, operator_id=operator_id, batch_id=batch_id,
         image_path=get_table_photo_url(tp_id), barcode=barcode, weight=weight_of_box,
         good=total_good_sneakers, eol=total_end_of_life, casuals=casuals,
     )
-    _attach_shipment(conn, tp_id, barcode)
+    # The shipment lookup is a blocking Airtable call (up to 8s) — threadpool
+    # it for the same reason as the Pillow work above.
+    await run_in_threadpool(_attach_shipment, conn, tp_id, barcode)
     _enqueue_outbox(conn, tp_id, barcode, {"weight": weight_of_box, "good": total_good_sneakers,
                                            "eol": total_end_of_life, "casuals": casuals})
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
@@ -307,8 +333,10 @@ def delete_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)):
     conn.execute("DELETE FROM table_photos WHERE id = ?", (tp_id,))
     conn.commit()
 
-    # Best-effort cleanup of the table photo + all pair crop files on disk.
+    # Best-effort cleanup of the table photo (+ its thumb) + all pair crop files.
     paths = [row["image_path"]] + [p["image_path"] for p in pair_rows]
+    if row["image_path"]:
+        paths.append(get_table_photo_thumb_url(tp_id))
     for path in paths:
         if path:
             try:

@@ -113,10 +113,11 @@ function updateTimestamp() {
 
 function startAutoRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
-    // Only auto-refresh on page 1 (the newest records).
+    // Only auto-refresh on page 1 (the newest records), and only while the
+    // tab is visible — background tabs were polling the server forever.
     // Refreshing while the user is browsing older pages would jump them back to the top.
     refreshTimer = setInterval(() => {
-        if (currentPage === 1) loadFeed(1);
+        if (!document.hidden && currentPage === 1) loadFeed(1);
     }, 10000);
 }
 

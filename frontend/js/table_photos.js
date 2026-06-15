@@ -97,8 +97,12 @@ async function openDetail(id) {
         ? `<div class="tp-kv"><span>Shipment</span><b>${esc(t.shipment_info.partner || "matched")}${t.shipment_info.weight != null ? " · " + esc(t.shipment_info.weight) + " lb" : ""}</b></div>`
         : "";
     const err = t.error_message ? `<div class="form-error" style="display:block">${esc(t.error_message)}</div>` : "";
+    // Show the thumbnail in the modal (the original can be several MB);
+    // clicking it opens the full-resolution photo in a new tab.
     const photo = t.image_path
-        ? `<img src="${esc(t.image_path)}" class="tp-photo" alt="table photo">`
+        ? `<a href="${esc(t.image_path)}" target="_blank" rel="noopener" style="display:block" title="Click to open full resolution">
+               <img src="${esc(t.thumb_path || t.image_path)}" class="tp-photo" alt="table photo">
+           </a>`
         : `<div class="tp-photo tp-photo--none">metadata only — no image</div>`;
 
     // Build the lightbox gallery from pairs that have a crop image, in order.
