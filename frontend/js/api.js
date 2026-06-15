@@ -129,6 +129,11 @@ const api = {
         return apiFetch("/api/analytics/alerts");
     },
 
+    /** All Tableau visualizations in one cached payload. */
+    getTableauStats() {
+        return apiFetch("/api/tableau/stats");
+    },
+
     /**
      * Generate fake shoe inspections (simulation mode only).
      *
