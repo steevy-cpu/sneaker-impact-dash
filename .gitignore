@@ -68,3 +68,7 @@ images/
 
 # TLS certs (self-signed, includes a private key) — never commit
 certs/
+
+# SQLite WAL/SHM runtime sidecars (never commit)
+*.db-wal
+*.db-shm

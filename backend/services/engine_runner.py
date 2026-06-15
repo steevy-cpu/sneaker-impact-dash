@@ -78,7 +78,7 @@ def main():
             config.MODEL_OLLAMA_TIMEOUT = args.model_timeout
 
         from segment_utils import build_segmenter
-        from pair_utils import pair_shoes, pair_shoes_visual
+        from pair_utils import pair_shoes, pair_shoes_hybrid, pair_shoes_visual
         from brand_utils import build_brand_classifier
         from model_search import build_model_identifier
         try:
@@ -100,7 +100,19 @@ def main():
             segs = [s for s in segs if s.area() >= min_frac * area]
         if getattr(config, "SEGMENT_PAIR", True):
             method = getattr(config, "SEGMENT_PAIR_METHOD", "visual")
-            if method == "visual":
+            if method == "hybrid":
+                # Adjacency-first with an appearance veto + high-bar visual
+                # rescue. See pair_shoes_hybrid for the measured rationale.
+                from embedder_utils import build_image_embedder
+                embedder = build_image_embedder(config)
+                segs = pair_shoes_hybrid(
+                    image, segs, embedder,
+                    max_gap_frac=getattr(config, "SEGMENT_PAIR_MAX_GAP", 1.2),
+                    veto_min=getattr(config, "SEGMENT_PAIR_VETO_MIN", 0.25),
+                    rescue_min=getattr(config, "SEGMENT_PAIR_RESCUE_MIN", 0.80),
+                    log=print,                          # stdout is redirected to stderr
+                )
+            elif method == "visual":
                 # Pair by appearance (DINOv2/CLIP) so shoes need not be tied.
                 # Reuses the same embedder the model-ID index uses.
                 from embedder_utils import build_image_embedder
