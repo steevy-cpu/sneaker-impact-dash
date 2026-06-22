@@ -28,6 +28,29 @@
       .gl-pagination { display:flex; gap:12px; align-items:center; justify-content:center; margin-top:22px; }
       .gl-zoom { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; background:rgba(3,7,18,.9); cursor:zoom-out; }
       .gl-zoom.open { display:flex; } .gl-zoom img { max-width:92vw; max-height:92vh; border-radius:10px; }
+      .gl-edit-btn { width:100%; margin-top:8px; padding:5px 0; font-size:12px; font-weight:700; border:1px solid var(--border,#cbd5e1);
+        background:var(--bg,#f8fafc); color:var(--text,#0f172a); border-radius:7px; cursor:pointer; }
+      .gl-edit-btn:hover { border-color:#6366f1; color:#6366f1; }
+      /* edit modal */
+      .gl-modal { position:fixed; inset:0; z-index:1050; display:none; align-items:center; justify-content:center; background:rgba(3,7,18,.6); }
+      .gl-modal.open { display:flex; }
+      .gl-modal-box { background:var(--card,#fff); border-radius:14px; padding:22px 26px; width:min(94vw,560px); max-height:92vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.4); }
+      .gl-modal-box h3 { margin:0 0 4px; font-size:17px; color:var(--text,#0f172a); }
+      .gl-edit-img { width:130px; height:130px; object-fit:cover; border-radius:10px; background:#0b1220; float:right; margin:0 0 10px 14px; }
+      .gl-fld { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted,#64748b); margin:14px 0 8px; }
+      .gl-chips { display:flex; flex-wrap:wrap; gap:7px; }
+      .gl-chip { position:relative; border:1px solid var(--border,#cbd5e1); background:var(--card,#fff); color:var(--text,#0f172a);
+        border-radius:999px; padding:7px 13px; font-size:13px; font-weight:600; cursor:pointer; user-select:none; }
+      .gl-chip:hover { border-color:#6366f1; }
+      .gl-chip.sel { background:#6366f1; border-color:#6366f1; color:#fff; }
+      .gl-color-chip { width:28px; height:28px; padding:0; border-radius:7px; }
+      .gl-color-chip.sel { outline:3px solid #6366f1; outline-offset:1px; }
+      .gl-edit-input { padding:8px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px; }
+      .gl-modal-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:20px; align-items:center; }
+      .gl-modal-actions button { padding:10px 18px; font-size:14px; font-weight:700; border-radius:9px; cursor:pointer; border:none; }
+      .gl-save { background:#10b981; color:#fff; } .gl-save:hover { background:#059669; }
+      .gl-cancel { background:var(--bg,#f1f5f9); color:var(--text,#0f172a); border:1px solid var(--border,#cbd5e1)!important; }
+      .gl-toreview { background:#fef3c7; color:#b45309; } .gl-del2 { background:#fee2e2; color:#b91c1c; margin-left:auto; }
     </style>
 </head>
 <body>
@@ -101,9 +124,31 @@
 
 <div class="gl-zoom" id="gl-zoom"><img id="gl-zoom-img" alt="zoom" src=""></div>
 
+<!-- Edit a gold label (fix an error) -->
+<div class="gl-modal" id="gl-edit">
+    <div class="gl-modal-box">
+        <img class="gl-edit-img" id="gl-edit-img" alt="crop" src="">
+        <h3>Edit gold label</h3>
+        <div class="text-sm text-muted" id="gl-edit-id"></div>
+        <div class="gl-fld">Brand</div>
+        <div class="gl-chips" id="gl-edit-brands"></div>
+        <input type="text" class="gl-edit-input" id="gl-edit-other" placeholder="type other brand…" style="display:none;margin-top:8px;">
+        <div class="gl-fld">Color</div>
+        <div class="gl-chips" id="gl-edit-colors"></div>
+        <div class="gl-fld">Model <span class="text-xs text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></div>
+        <input type="text" class="gl-edit-input" id="gl-edit-model" placeholder="model / silhouette" style="width:100%;max-width:340px;">
+        <div class="gl-modal-actions">
+            <button class="gl-save" id="gl-save" type="button">Save changes</button>
+            <button class="gl-cancel" id="gl-cancel" type="button">Cancel</button>
+            <button class="gl-toreview" id="gl-toreview" type="button" title="Remove from gold and send back to the Quick Label queue">↩ Send back to review</button>
+            <button class="gl-del2" id="gl-del2" type="button" title="Delete this pair entirely (e.g. not a shoe)">✕ Delete</button>
+        </div>
+    </div>
+</div>
+
 <script src="js/icons.js"></script>
 <script src="js/api.js?v=19"></script>
 <script src="js/utils.js"></script>
-<script src="js/gold_labels.js?v=1"></script>
+<script src="js/gold_labels.js?v=2"></script>
 </body>
 </html>

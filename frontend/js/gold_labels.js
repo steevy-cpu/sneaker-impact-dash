@@ -7,7 +7,26 @@
  * page so the DOM never holds more than one page — stays fast as the set grows.
  */
 
-const GL = { page: 1, pageSize: 60, total: 0, make: "", filledFilter: false };
+const GL = { page: 1, pageSize: 60, total: 0, make: "", filledFilter: false,
+             items: [], edit: null, eBrand: null, eColor: null };
+
+// Controlled vocabulary (mirrors Quick Label / build_dataset) — editing stays
+// canonical, so a fix can't reintroduce a dirty brand spelling.
+const BRANDS = ["Nike", "Brooks", "Hoka", "New Balance", "ASICS", "Saucony",
+                "Adidas", "Altra", "On", "Mizuno", "Reebok", "Under Armour",
+                "Puma", "Merrell", "Other"];
+const BRAND_ALIAS = { asics: "ASICS", "new balance": "New Balance", newbalance: "New Balance",
+    "under armour": "Under Armour", underarmour: "Under Armour", "hoka one one": "Hoka",
+    "on running": "On", onrunning: "On" };
+const COLORS = [["black","#111827"],["white","#e5e7eb"],["gray","#9ca3af"],
+    ["brown","#92400e"],["red","#ef4444"],["orange","#f97316"],["yellow","#eab308"],
+    ["green","#22c55e"],["blue","#3b82f6"],["purple","#a855f7"],["pink","#ec4899"],
+    ["unknown","#cbd5e1"]];
+function canonBrand(s) {
+    const k = (s || "").trim().toLowerCase();
+    if (!k || k === "unknown") return null;
+    return BRAND_ALIAS[k] || BRANDS.find(b => b.toLowerCase() === k) || null;
+}
 
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 const $ = (id) => document.getElementById(id);
@@ -23,7 +42,7 @@ async function load(page) {
         c.innerHTML = `<div class="error-state">Could not load gold labels: ${esc(err.message)}</div>`;
         return;
     }
-    GL.page = data.page; GL.total = data.total;
+    GL.page = data.page; GL.total = data.total; GL.items = data.items;
     renderStats(data.stats);
 
     if (!data.items.length) {
@@ -36,6 +55,7 @@ async function load(page) {
     }
     c.innerHTML = `<div class="gl-grid">${data.items.map(cardHTML).join("")}</div>`;
     c.querySelectorAll(".gl-img").forEach(img => img.addEventListener("click", () => zoom(img.src)));
+    c.querySelectorAll(".gl-edit-btn").forEach(b => b.addEventListener("click", () => openEditor(b.dataset.id)));
     renderPagination();
     c.scrollIntoView({ block: "start" });
 }
@@ -60,6 +80,7 @@ function cardHTML(p) {
             <div class="gl-make">${esc(make)}</div>
             <div class="gl-sub">${esc(model || "—")}${color ? " · " + esc(color) : ""}</div>
             ${badge}${was}
+            <button class="gl-edit-btn" data-id="${esc(p.id)}" type="button">✎ Edit</button>
         </div></div>`;
 }
 
@@ -96,9 +117,91 @@ function zoom(src) {
     $("gl-zoom").classList.add("open");
 }
 
+/* ---- edit a gold label (fix an error) -------------------------------- */
+function buildEditChips() {
+    $("gl-edit-brands").innerHTML = BRANDS.map(b => `<div class="gl-chip" data-brand="${b}">${b}</div>`).join("");
+    $("gl-edit-colors").innerHTML = COLORS.map(([c, hex]) =>
+        `<div class="gl-chip gl-color-chip" data-color="${c}" title="${c}" style="background:${hex}"></div>`).join("");
+    $("gl-edit-brands").querySelectorAll(".gl-chip").forEach(el =>
+        el.addEventListener("click", () => selBrand(el.dataset.brand)));
+    $("gl-edit-colors").querySelectorAll(".gl-chip").forEach(el =>
+        el.addEventListener("click", () => selColor(el.dataset.color)));
+}
+function selBrand(b) {
+    GL.eBrand = b;
+    $("gl-edit-brands").querySelectorAll(".gl-chip").forEach(el => el.classList.toggle("sel", el.dataset.brand === b));
+    $("gl-edit-other").style.display = (b === "Other") ? "block" : "none";
+    if (b === "Other") $("gl-edit-other").focus();
+}
+function selColor(c) {
+    GL.eColor = c;
+    $("gl-edit-colors").querySelectorAll(".gl-chip").forEach(el => el.classList.toggle("sel", el.dataset.color === c));
+}
+function openEditor(id) {
+    const p = GL.items.find(x => x.id === id);
+    if (!p) return;
+    GL.edit = p;
+    $("gl-edit-id").textContent = id;
+    $("gl-edit-img").src = p.image_path || "";
+    const curMake = p.final_make || p.make || "";
+    const cb = canonBrand(curMake);
+    selBrand(cb || "Other");
+    $("gl-edit-other").value = (cb === null && curMake) ? curMake : "";
+    const curColor = (p.final_color || p.detected_color || "unknown").toLowerCase();
+    selColor(COLORS.some(c => c[0] === curColor) ? curColor : "unknown");
+    $("gl-edit-model").value = (p.final_model || p.model || "") === "unknown" ? "" : (p.final_model || p.model || "");
+    $("gl-edit").classList.add("open");
+}
+function closeEditor() { $("gl-edit").classList.remove("open"); GL.edit = null; }
+
+async function saveEdit() {
+    const p = GL.edit; if (!p) return;
+    let make = GL.eBrand;
+    if (make === "Other") { make = $("gl-edit-other").value.trim(); if (!make) { $("gl-edit-other").focus(); return; } }
+    // confirmed vs corrected = is the final label still the AI's original guess?
+    const action = (make === canonBrand(p.make) && GL.eColor === (p.detected_color || "unknown").toLowerCase())
+        ? "confirmed" : "corrected";
+    const btn = $("gl-save"); btn.disabled = true;
+    try {
+        await api.reviewPair(p.id, { final_make: make, final_color: GL.eColor,
+            final_model: $("gl-edit-model").value.trim() || null,
+            label_action: action, review_status: "COMPLETED" });
+        showToast("✅ Updated " + p.id, "success", 1500);
+        closeEditor(); GL.filledFilter = false; load(GL.page);
+    } catch (err) { showToast(err.message || "Save failed", "error", 2800); }
+    finally { btn.disabled = false; }
+}
+async function sendToReview() {
+    const p = GL.edit; if (!p) return;
+    if (!confirm("Remove this from the gold set and send it back to the Quick Label queue?")) return;
+    try {
+        await api.reviewPair(p.id, { final_make: null, final_color: null, final_model: null,
+            label_action: null, review_status: "PENDING" });
+        showToast("↩ Sent back to review", "info", 1500);
+        closeEditor(); GL.filledFilter = false; load(GL.page);
+    } catch (err) { showToast(err.message || "Failed", "error", 2800); }
+}
+async function deleteGold() {
+    const p = GL.edit; if (!p) return;
+    if (!confirm(`Delete pair ${p.id} entirely?\n\nUse this if it isn't a shoe. Permanently removes the pair + crop.`)) return;
+    try {
+        await api.deletePair(p.id);
+        showToast("Deleted " + p.id, "info", 1500);
+        closeEditor(); GL.filledFilter = false; load(GL.page);
+    } catch (err) { showToast(err.message || "Delete failed", "error", 2800); }
+}
+
+buildEditChips();
 $("gl-make").addEventListener("change", (e) => { GL.make = e.target.value; load(1); });
 $("gl-refresh").addEventListener("click", () => { GL.filledFilter = false; load(GL.page); });
 $("gl-zoom").addEventListener("click", () => $("gl-zoom").classList.remove("open"));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("gl-zoom").classList.remove("open"); });
+$("gl-save").addEventListener("click", saveEdit);
+$("gl-cancel").addEventListener("click", closeEditor);
+$("gl-toreview").addEventListener("click", sendToReview);
+$("gl-del2").addEventListener("click", deleteGold);
+$("gl-edit").addEventListener("click", (e) => { if (e.target.id === "gl-edit") closeEditor(); });
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { $("gl-zoom").classList.remove("open"); closeEditor(); }
+});
 
 load(1);

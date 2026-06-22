@@ -230,6 +230,7 @@ def review_pair(
          data.review_status, data.notes, pair_id),
     )
     conn.commit()
+    _gold_stats["data"] = None          # gold set changed → drop the header cache
     return pair_to_dict(conn.execute("SELECT * FROM pairs WHERE id = ?", (pair_id,)).fetchone())
 
 
@@ -251,6 +252,7 @@ def delete_pair(pair_id: str, conn: sqlite3.Connection = Depends(get_db)):
         (row["table_photo_id"],),
     )
     conn.commit()
+    _gold_stats["data"] = None          # may have removed a gold pair → drop cache
 
     if row["image_path"]:
         try:
