@@ -155,4 +155,6 @@ app.include_router(labeling.router)        # multi-worker table claiming: /api/l
 
 @app.get("/", include_in_schema=False)
 def root():
-    return RedirectResponse(url="/frontend/")
+    # Land on Tableau (the Dashboard nav was retired). /frontend/ still serves
+    # index.html directly if anyone hits it.
+    return RedirectResponse(url="/frontend/tableau.html")
