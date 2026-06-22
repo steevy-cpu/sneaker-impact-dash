@@ -134,6 +134,11 @@ const api = {
         return apiFetch("/api/tableau/stats");
     },
 
+    /** Next batch of PENDING pairs ordered for gold-label value (Quick Label). */
+    getGoldQueue(limit = 20) {
+        return apiFetch(`/api/pairs/gold-queue?limit=${limit}`);
+    },
+
     /**
      * Generate fake shoe inspections (simulation mode only).
      *

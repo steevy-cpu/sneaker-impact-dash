@@ -47,6 +47,8 @@ def pair_to_dict(row: sqlite3.Row) -> dict:
         "review_status":    row["review_status"],
         "final_make":       row["final_make"],
         "final_model":      row["final_model"],
+        "final_color":      row["final_color"] if "final_color" in row.keys() else None,
+        "label_action":     row["label_action"] if "label_action" in row.keys() else None,
         "notes":            row["notes"],
         "created_at":       row["created_at"],
     }
@@ -82,6 +84,46 @@ def list_pairs(
     }
 
 
+@router.get("/gold-queue", summary="Pending pairs ordered for gold-label value")
+def gold_queue(
+    limit: int = Query(20, ge=1, le=100),
+    conn:  sqlite3.Connection = Depends(get_db),
+):
+    """Serve the next batch of PENDING pairs for the fast gold-labeling page,
+    ordered for VALUE not FIFO:
+      * mid-confidence first — a prediction near ~0.6 make_confidence is where
+        the AI is most likely wrong, so a human's confirm/correct carries the
+        most signal (verifying a 0.99 Nike teaches little).
+      * brand diversity — we pull a value-ranked candidate pool then round-robin
+        by AI make so consecutive cards aren't all the same brand, building a
+        representative gold set instead of 200 Brooks in a row.
+
+    Read-only (plain SELECT, sync def -> threadpool); cannot lock or slow the
+    live site. Each labeled pair flips to COMPLETED so it won't reappear."""
+    total = conn.execute(
+        "SELECT COUNT(*) FROM pairs WHERE review_status = 'PENDING'").fetchone()[0]
+    # Value-ranked candidate pool (cheap: a few hundred rows, indexed scan).
+    pool = conn.execute(
+        """SELECT * FROM pairs
+           WHERE review_status = 'PENDING'
+           ORDER BY ABS(COALESCE(make_confidence, 0.5) - 0.6) ASC, id ASC
+           LIMIT 400""").fetchall()
+    # Round-robin by AI make for diversity, preserving value order within a brand.
+    from collections import OrderedDict
+    buckets = OrderedDict()
+    for r in pool:
+        buckets.setdefault((r["make"] or "").lower(), []).append(r)
+    ordered, queues = [], list(buckets.values())
+    while queues and len(ordered) < limit:
+        for q in list(queues):
+            if q:
+                ordered.append(q.pop(0))
+                if len(ordered) >= limit:
+                    break
+        queues = [q for q in queues if q]
+    return {"total_pending": total, "items": [pair_to_dict(r) for r in ordered]}
+
+
 @router.get("/{pair_id}", summary="Get a single pair")
 def get_pair(pair_id: str, conn: sqlite3.Connection = Depends(get_db)):
     row = conn.execute("SELECT * FROM pairs WHERE id = ?", (pair_id,)).fetchone()
@@ -108,14 +150,19 @@ def review_pair(
     if not row:
         raise HTTPException(status_code=404, detail=f"Pair '{pair_id}' not found")
 
+    # final_color/label_action come from the gold-labeling page; the live Pairs
+    # Review page omits them (they arrive as None) so its behaviour is unchanged.
     conn.execute(
         """UPDATE pairs SET
                final_make    = ?,
                final_model   = ?,
+               final_color   = ?,
+               label_action  = ?,
                review_status = ?,
                notes         = ?
            WHERE id = ?""",
-        (data.final_make, data.final_model, data.review_status, data.notes, pair_id),
+        (data.final_make, data.final_model, data.final_color, data.label_action,
+         data.review_status, data.notes, pair_id),
     )
     conn.commit()
     return pair_to_dict(conn.execute("SELECT * FROM pairs WHERE id = ?", (pair_id,)).fetchone())

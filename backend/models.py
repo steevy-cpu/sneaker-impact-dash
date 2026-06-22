@@ -154,9 +154,14 @@ class PairResponse(BaseModel):
 
 
 class PairReviewUpdate(BaseModel):
-    """Human confirm/override of a pair's make/model."""
+    """Human confirm/override of a pair's make/model (+ optional color and a
+    confirmed/corrected flag from the gold-labeling workflow). The extra fields
+    default to None so existing callers (the live Pairs Review page) are
+    unaffected — nothing about that flow changes."""
     final_make:    Optional[str] = None
     final_model:   Optional[str] = None
+    final_color:   Optional[str] = None
+    label_action:  Optional[str] = None          # 'confirmed' | 'corrected'
     review_status: str           = "COMPLETED"   # NOT_REQUIRED | PENDING | COMPLETED
     notes:         Optional[str] = None
 

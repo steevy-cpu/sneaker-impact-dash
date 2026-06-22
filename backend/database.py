@@ -200,6 +200,9 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
         ("shoes", "shoe_color", "TEXT"),
         ("pairs", "pair_score", "REAL"),   # visual similarity of the two shoes (0-1), null for singles
         ("pairs", "prediction_source", "TEXT"),   # 'local' | 'cloud:<backend>:<model>'
+        ("pairs", "final_color", "TEXT"),         # human-confirmed color (gold-label workflow)
+        ("pairs", "label_action", "TEXT"),        # 'confirmed' (kept AI label) | 'corrected'
+                                                  # (human changed it) — a free AI-accuracy meter
         ("table_photos", "claimed_at", "TEXT"),   # when a worker claimed the job; lets the
                                                   # stale sweeper re-queue orphaned 'processing' rows
     ]:

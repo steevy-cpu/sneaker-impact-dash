@@ -3,49 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tableau — Sneaker Impact</title>
+    <title>Quick Label — Sneaker Impact</title>
     <script src="js/theme.js?v=2"></script>
     <link rel="stylesheet" href="css/base.css">
     <link rel="stylesheet" href="css/components.css?v=11">
-    <!-- Vendored locally (not CDN) so the page loads instantly and works
-         offline; defer so it never blocks page parse. -->
-    <script defer src="js/vendor/chart.umd.min.js"></script>
     <style>
-      .tb-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-                 gap:14px; margin-bottom:24px; }
-      .tb-kpi { position:relative; overflow:hidden; border:1px solid var(--border);
-                border-radius:var(--radius-lg,14px); padding:18px 20px; background:var(--card,#fff);
-                box-shadow:0 1px 2px rgba(0,0,0,.04); }
-      .tb-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
-                background:linear-gradient(180deg,#6366f1,#06b6d4); }
-      .tb-kpi-val { font-size:30px; font-weight:800; line-height:1; letter-spacing:-.02em;
-                color:var(--text,#0f172a); }
-      .tb-kpi-lbl { font-size:11px; text-transform:uppercase; letter-spacing:.05em;
-                color:var(--text-muted,#64748b); margin-top:8px; font-weight:600; }
-      .tb-section { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
-                color:var(--text-muted,#64748b); margin:30px 0 14px; display:flex; align-items:center; gap:8px; }
-      .tb-section::after { content:""; flex:1; height:1px; background:var(--border,#e2e8f0); }
-      .tb-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:18px; }
-      .tb-card { border:1px solid var(--border); border-radius:var(--radius-lg,14px);
-                background:var(--card,#fff); padding:18px 20px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
-      .tb-card.wide { grid-column:1/-1; }
-      .tb-card-title { font-size:14px; font-weight:700; color:var(--text,#0f172a); margin-bottom:2px; }
-      .tb-card-insight { font-size:12px; color:var(--text-muted,#64748b); margin-bottom:12px; min-height:16px; }
-      .tb-wrap { position:relative; height:300px; }
-      .tb-wrap.tall { height:360px; }
-      .tb-foot { font-size:11px; color:var(--text-light,#94a3b8); margin-top:18px; text-align:right; }
+      .ql-wrap { max-width: 1100px; margin: 0 auto; }
+      .ql-progress { display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+        border:1px solid var(--border); border-radius:var(--radius-lg,14px);
+        background:var(--card,#fff); padding:12px 18px; margin-bottom:18px; }
+      .ql-progress .big { font-size:22px; font-weight:800; color:var(--text,#0f172a); }
+      .ql-bar { flex:1; min-width:160px; height:8px; border-radius:6px; background:var(--border,#e2e8f0); overflow:hidden; }
+      .ql-bar > div { height:100%; background:linear-gradient(90deg,#6366f1,#06b6d4); width:0; transition:width .25s; }
+      .ql-goal-input { width:56px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; font-size:13px; }
+      .ql-stage { display:grid; grid-template-columns: minmax(280px,420px) 1fr; gap:22px; align-items:start; }
+      @media (max-width: 820px) { .ql-stage { grid-template-columns:1fr; } }
+      .ql-imgbox { position:relative; }
+      .ql-img { width:100%; border-radius:var(--radius-lg,14px); background:#0b1220; object-fit:contain;
+        max-height:520px; cursor:zoom-in; display:block; }
+      .ql-imgmeta { font-size:12px; color:var(--text-muted,#64748b); margin-top:8px; line-height:1.5; }
+      .ql-imgmeta b { color:var(--text,#0f172a); }
+      .ql-panel { display:flex; flex-direction:column; gap:16px; }
+      .ql-field-label { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+        color:var(--text-muted,#64748b); margin-bottom:8px; display:flex; gap:8px; align-items:center; }
+      .ql-ai { font-weight:600; color:#6366f1; text-transform:none; letter-spacing:0; }
+      .ql-chips { display:flex; flex-wrap:wrap; gap:8px; }
+      .ql-chip { position:relative; border:1px solid var(--border,#cbd5e1); background:var(--card,#fff);
+        color:var(--text,#0f172a); border-radius:999px; padding:8px 14px; font-size:14px; font-weight:600;
+        cursor:pointer; transition:all .08s; user-select:none; }
+      .ql-chip:hover { border-color:#6366f1; }
+      .ql-chip.sel { background:#6366f1; border-color:#6366f1; color:#fff; box-shadow:0 2px 8px rgba(99,102,241,.35); }
+      .ql-chip .key { position:absolute; top:-7px; left:-7px; background:#0f172a; color:#fff; font-size:10px;
+        width:16px; height:16px; line-height:16px; text-align:center; border-radius:50%; font-weight:700; }
+      .ql-chip.sel .key { background:#fff; color:#6366f1; }
+      .ql-color-chip { width:30px; height:30px; padding:0; border-radius:8px; }
+      .ql-color-chip.sel { outline:3px solid #6366f1; outline-offset:1px; }
+      .ql-other-input { padding:7px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px; min-width:160px; }
+      .ql-model-input { padding:8px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px; width:100%; max-width:340px; }
+      .ql-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
+      .ql-actions button { padding:11px 20px; font-size:15px; font-weight:700; border-radius:10px; cursor:pointer; border:none; }
+      .ql-approve { background:#10b981; color:#fff; }
+      .ql-approve:hover { background:#059669; }
+      .ql-skip { background:var(--bg,#f1f5f9); color:var(--text,#0f172a); border:1px solid var(--border,#cbd5e1)!important; }
+      .ql-del { background:#fee2e2; color:#b91c1c; }
+      .ql-del:hover { background:#fecaca; }
+      .ql-keys { font-size:11px; color:var(--text-light,#94a3b8); margin-top:14px; line-height:1.7; }
+      .ql-keys kbd { background:var(--bg,#f1f5f9); border:1px solid var(--border,#cbd5e1); border-radius:4px;
+        padding:1px 6px; font-size:11px; font-family:var(--mono,monospace); }
+      .ql-corrected { color:#f59e0b; font-weight:700; }
+      .ql-zoom-overlay { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center;
+        background:rgba(3,7,18,.9); cursor:zoom-out; }
+      .ql-zoom-overlay.open { display:flex; }
+      .ql-zoom-overlay img { max-width:94vw; max-height:94vh; object-fit:contain; border-radius:10px; }
     </style>
 </head>
 <body>
 <div class="layout">
-
     <header class="header">
         <div class="header-logo">
             <img src="assets/Sneaker_impact_logo.avif" alt="Sneaker Impact" class="header-logo-img"
                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
             <span class="header-logo-text" style="display:none;">Sneaker<span>Impact</span></span>
         </div>
-        <span class="header-title">Tableau</span>
+        <span class="header-title">Quick Label</span>
         <div class="header-spacer"></div>
         <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme"><span id="theme-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span></button>
         <span class="mode-badge simulation" id="mode-badge">SIMULATION MODE</span>
@@ -63,7 +83,7 @@
             <a href="pairs_review.html" class="nav-link">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span> Pairs Review
             </a>
-            <a href="quick_label.html" class="nav-link">
+            <a href="quick_label.html" class="nav-link active">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11 3 3L22 4"/><path d="M12 2v4"/><path d="M5 7l2 2"/><path d="M2 12h4"/><path d="M5 17l2-2"/></svg></span> Quick Label
             </a>
         </div>
@@ -76,7 +96,7 @@
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Live Feed
             </a>
             <a href="review_queue.html" class="nav-link">
-                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span> Review Queue
+                <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/></svg></span> Review Queue
             </a>
         </div>
         <div class="nav-section">
@@ -93,7 +113,7 @@
             <a href="analytics.html" class="nav-link">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg></span> Analytics
             </a>
-            <a href="tableau.html" class="nav-link active">
+            <a href="tableau.html" class="nav-link">
                 <span class="nav-icon"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><rect x="7" y="9" width="3" height="8" rx="1"/><rect x="12" y="5" width="3" height="12" rx="1"/><rect x="17" y="12" width="3" height="5" rx="1"/></svg></span> Tableau
             </a>
             <a href="system_health.html" class="nav-link">
@@ -113,90 +133,64 @@
 
     <main class="main">
         <div class="page-header">
-            <h1 class="page-title">Tableau</h1>
-            <p class="page-subtitle">Live visual intelligence across the dataset, AI classification, and Airtable sync.</p>
+            <h1 class="page-title">Quick Label</h1>
+            <p class="page-subtitle">Fast keyboard confirmation of brand &amp; color — builds the human-verified gold training set. Each save records whether you kept or corrected the AI guess.</p>
         </div>
 
-        <div id="tb-error" class="error-state" style="display:none;"></div>
+        <div class="ql-wrap">
+            <div class="ql-progress">
+                <div><div class="big" id="ql-session">0</div><div class="text-xs text-muted">confirmed this session</div></div>
+                <div class="ql-bar"><div id="ql-bar-fill"></div></div>
+                <div class="text-sm">Goal <input type="number" id="ql-goal" class="ql-goal-input" value="50" min="1"></div>
+                <div class="text-sm text-muted">·&nbsp; <span id="ql-pending">—</span> pending total</div>
+            </div>
 
-        <!-- KPI strip -->
-        <div class="tb-kpis" id="tb-kpis">
-            <div class="tb-kpi"><div class="tb-kpi-val" id="kpi-photos">—</div><div class="tb-kpi-lbl">Table Photos</div></div>
-            <div class="tb-kpi"><div class="tb-kpi-val" id="kpi-pairs">—</div><div class="tb-kpi-lbl">Pairs Detected</div></div>
-            <div class="tb-kpi"><div class="tb-kpi-val" id="kpi-shoes">—</div><div class="tb-kpi-lbl">Shoes Processed</div></div>
-            <div class="tb-kpi"><div class="tb-kpi-val" id="kpi-brands">—</div><div class="tb-kpi-lbl">Distinct Brands</div></div>
-            <div class="tb-kpi"><div class="tb-kpi-val" id="kpi-models">—</div><div class="tb-kpi-lbl">Distinct Models</div></div>
-            <div class="tb-kpi"><div class="tb-kpi-val" id="kpi-identified">—</div><div class="tb-kpi-lbl">Identified</div></div>
-            <div class="tb-kpi"><div class="tb-kpi-val" id="kpi-sync">—</div><div class="tb-kpi-lbl">Airtable Synced</div></div>
+            <div id="ql-error" class="error-state" style="display:none;"></div>
+            <div id="ql-empty" class="empty-state" style="display:none;"></div>
+
+            <div class="ql-stage" id="ql-stage">
+                <div class="ql-imgbox">
+                    <img id="ql-img" class="ql-img" alt="shoe crop" src="">
+                    <div class="ql-imgmeta" id="ql-imgmeta"></div>
+                </div>
+                <div class="ql-panel">
+                    <div>
+                        <div class="ql-field-label">Brand <span class="ql-ai" id="ql-ai-make"></span></div>
+                        <div class="ql-chips" id="ql-brand-chips"></div>
+                        <input type="text" class="ql-other-input" id="ql-other-make" placeholder="type other brand…" style="display:none;margin-top:8px;">
+                    </div>
+                    <div>
+                        <div class="ql-field-label">Color <span class="ql-ai" id="ql-ai-color"></span></div>
+                        <div class="ql-chips" id="ql-color-chips"></div>
+                    </div>
+                    <div>
+                        <div class="ql-field-label">Model <span class="text-xs text-muted" style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></div>
+                        <input type="text" class="ql-model-input" id="ql-model" placeholder="model / silhouette (optional)">
+                    </div>
+                    <div class="ql-actions">
+                        <button class="ql-approve" id="ql-approve" type="button">✅ Confirm &amp; Next</button>
+                        <button class="ql-skip" id="ql-skip" type="button">Skip</button>
+                        <button class="ql-del" id="ql-del" type="button">✕ Not a shoe</button>
+                    </div>
+                    <div class="ql-keys">
+                        <kbd>1</kbd>–<kbd>9</kbd> pick brand ·
+                        <kbd>Enter</kbd> confirm &amp; next ·
+                        <kbd>S</kbd> skip ·
+                        <kbd>D</kbd> delete ·
+                        <kbd>Z</kbd> zoom &nbsp;|&nbsp;
+                        <span id="ql-action-hint"></span>
+                    </div>
+                </div>
+            </div>
         </div>
-
-        <!-- DATASET -->
-        <div class="tb-section">Dataset Composition</div>
-        <div class="tb-grid">
-            <div class="tb-card"><div class="tb-card-title">Top Brands</div>
-                <div class="tb-card-insight" id="ins-brands"></div>
-                <div class="tb-wrap tall"><canvas id="c-brands"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Top Models</div>
-                <div class="tb-card-insight" id="ins-models"></div>
-                <div class="tb-wrap tall"><canvas id="c-models"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Color Palette</div>
-                <div class="tb-card-insight" id="ins-colors"></div>
-                <div class="tb-wrap"><canvas id="c-colors"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Box Composition — Good / End-of-Life / Casual</div>
-                <div class="tb-card-insight" id="ins-box"></div>
-                <div class="tb-wrap"><canvas id="c-box"></canvas></div></div>
-        </div>
-
-        <!-- AI CLASSIFICATION -->
-        <div class="tb-section">AI Classification</div>
-        <div class="tb-grid">
-            <div class="tb-card"><div class="tb-card-title">Who Identified It — Local vs Cloud</div>
-                <div class="tb-card-insight" id="ins-source"></div>
-                <div class="tb-wrap"><canvas id="c-source"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Review Workflow</div>
-                <div class="tb-card-insight" id="ins-review"></div>
-                <div class="tb-wrap"><canvas id="c-review"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Brand Confidence Distribution</div>
-                <div class="tb-card-insight" id="ins-makeconf"></div>
-                <div class="tb-wrap"><canvas id="c-makeconf"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Model Confidence Distribution</div>
-                <div class="tb-card-insight" id="ins-modelconf"></div>
-                <div class="tb-wrap"><canvas id="c-modelconf"></canvas></div></div>
-        </div>
-
-        <!-- PAIRING -->
-        <div class="tb-section">Pairing (DINOv2 Appearance Matching)</div>
-        <div class="tb-grid">
-            <div class="tb-card"><div class="tb-card-title">Pairs vs Singles</div>
-                <div class="tb-card-insight" id="ins-pairing"></div>
-                <div class="tb-wrap"><canvas id="c-pairing"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Pair-Match Score Distribution</div>
-                <div class="tb-card-insight" id="ins-pairscore"></div>
-                <div class="tb-wrap"><canvas id="c-pairscore"></canvas></div></div>
-        </div>
-
-        <!-- THROUGHPUT + SYNC -->
-        <div class="tb-section">Throughput &amp; Airtable Sync</div>
-        <div class="tb-grid">
-            <div class="tb-card wide"><div class="tb-card-title">Activity — Last 30 Days</div>
-                <div class="tb-card-insight" id="ins-timeline"></div>
-                <div class="tb-wrap"><canvas id="c-timeline"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Airtable Sync Status</div>
-                <div class="tb-card-insight" id="ins-sync"></div>
-                <div class="tb-wrap"><canvas id="c-sync"></canvas></div></div>
-            <div class="tb-card"><div class="tb-card-title">Color Confidence Distribution</div>
-                <div class="tb-card-insight" id="ins-colorconf"></div>
-                <div class="tb-wrap"><canvas id="c-colorconf"></canvas></div></div>
-        </div>
-
-        <div class="tb-foot" id="tb-foot"></div>
     </main>
+</div>
 
-</div><!-- /.layout -->
+<div class="ql-zoom-overlay" id="ql-zoom"><img id="ql-zoom-img" alt="zoom" src=""></div>
 
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=16"></script>
+<script src="js/api.js?v=17"></script>
 <script src="js/utils.js"></script>
-<script src="js/tableau.js?v=1"></script>
+<script src="js/quick_label.js?v=1"></script>
 </body>
 </html>
