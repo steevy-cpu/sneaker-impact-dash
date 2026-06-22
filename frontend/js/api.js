@@ -139,6 +139,21 @@ const api = {
         return apiFetch(`/api/pairs/gold-queue?limit=${limit}`);
     },
 
+    /* ---- Multi-worker table claiming (Quick Label) ---- */
+    /** Tables with pending pairs, claim-aware (mine + free, others hidden). */
+    getLabelTables(worker) {
+        return apiFetch(`/api/labeling/tables?worker=${encodeURIComponent(worker)}`);
+    },
+    claimTable(tpId, worker) {
+        return apiFetch(`/api/labeling/claim/${encodeURIComponent(tpId)}?worker=${encodeURIComponent(worker)}`, { method: "POST" });
+    },
+    heartbeatTable(tpId, worker) {
+        return apiFetch(`/api/labeling/heartbeat/${encodeURIComponent(tpId)}?worker=${encodeURIComponent(worker)}`, { method: "POST" });
+    },
+    releaseTable(tpId, worker) {
+        return apiFetch(`/api/labeling/release/${encodeURIComponent(tpId)}?worker=${encodeURIComponent(worker)}`, { method: "POST" });
+    },
+
     /**
      * Generate fake shoe inspections (simulation mode only).
      *

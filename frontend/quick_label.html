@@ -55,6 +55,29 @@
         background:rgba(3,7,18,.9); cursor:zoom-out; }
       .ql-zoom-overlay.open { display:flex; }
       .ql-zoom-overlay img { max-width:94vw; max-height:94vh; object-fit:contain; border-radius:10px; }
+      /* worker bar + table picker */
+      .ql-workerbar { display:flex; align-items:center; gap:10px; padding:10px 14px; margin-bottom:16px;
+        border:1px solid var(--border); border-radius:10px; background:var(--card,#fff); }
+      .ql-section-title { font-size:15px; font-weight:700; color:var(--text,#0f172a); margin-bottom:10px; }
+      .ql-table-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+      .ql-table-card { border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--card,#fff);
+        cursor:pointer; transition:all .1s; display:flex; flex-direction:column; }
+      .ql-table-card:hover { border-color:#6366f1; box-shadow:0 4px 14px rgba(99,102,241,.18); transform:translateY(-2px); }
+      .ql-table-thumb { width:100%; aspect-ratio:16/9; object-fit:cover; background:#0b1220; display:block; }
+      .ql-table-thumb--none { display:flex; align-items:center; justify-content:center; color:var(--text-light,#94a3b8); font-size:12px; }
+      .ql-table-body { padding:10px 12px; }
+      .ql-table-body .id { font-weight:700; font-size:13px; color:var(--text,#0f172a); }
+      .ql-table-body .meta { font-size:12px; color:var(--text-muted,#64748b); margin-top:4px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+      .ql-pill { display:inline-block; background:#eef2ff; color:#4338ca; border-radius:999px; padding:2px 9px; font-size:12px; font-weight:700; }
+      .ql-pill.ql-resume { background:#dcfce7; color:#15803d; }
+      .ql-labelhead { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+      .ql-labelhead b { font-size:15px; }
+      .ql-name-overlay { position:fixed; inset:0; z-index:1100; display:none; align-items:center; justify-content:center; background:rgba(3,7,18,.6); }
+      .ql-name-overlay.open { display:flex; }
+      .ql-name-box { background:var(--card,#fff); border-radius:14px; padding:26px 30px; width:min(92vw,380px); box-shadow:0 20px 60px rgba(0,0,0,.4); }
+      .ql-name-box h3 { margin:0 0 6px; font-size:18px; color:var(--text,#0f172a); }
+      .ql-name-box input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:15px; margin:14px 0; }
+      .ql-name-box button { width:100%; padding:11px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer; }
     </style>
 </head>
 <body>
@@ -138,17 +161,40 @@
         </div>
 
         <div class="ql-wrap">
-            <div class="ql-progress">
-                <div><div class="big" id="ql-session">0</div><div class="text-xs text-muted">confirmed this session</div></div>
-                <div class="ql-bar"><div id="ql-bar-fill"></div></div>
-                <div class="text-sm">Goal <input type="number" id="ql-goal" class="ql-goal-input" value="50" min="1"></div>
-                <div class="text-sm text-muted">·&nbsp; <span id="ql-pending">—</span> pending total</div>
+            <!-- Worker identity is just a name (stored locally) — enough to
+                 attribute claims and let you resume your own table. -->
+            <div class="ql-workerbar">
+                <span class="text-sm">Labeler:</span> <b id="ql-worker-name">—</b>
+                <button class="page-btn" id="ql-change-worker" type="button" style="padding:3px 10px;">Change</button>
+                <span class="header-spacer"></span>
+                <button class="page-btn" id="ql-refresh-tables" type="button" style="padding:3px 10px;">↻ Refresh tables</button>
             </div>
 
-            <div id="ql-error" class="error-state" style="display:none;"></div>
-            <div id="ql-empty" class="empty-state" style="display:none;"></div>
+            <!-- VIEW 1: table picker -->
+            <div id="ql-picker">
+                <div class="ql-section-title">Pick a table to label</div>
+                <p class="text-sm text-muted" style="margin:-6px 0 14px;">Each table you open is reserved to you while you work it — other labelers won't see it. Finish it (or it returns to the pool after 15 min idle).</p>
+                <div id="ql-tables" class="ql-table-grid"><div class="loading-state">Loading…</div></div>
+            </div>
 
-            <div class="ql-stage" id="ql-stage">
+            <!-- VIEW 2: labeling a claimed table -->
+            <div id="ql-labelview" style="display:none;">
+                <div class="ql-labelhead">
+                    <button class="page-btn" id="ql-back" type="button">← Tables</button>
+                    <b id="ql-table-id"></b>
+                    <span class="text-sm text-muted" id="ql-table-progress"></span>
+                </div>
+                <div class="ql-progress">
+                    <div><div class="big" id="ql-session">0</div><div class="text-xs text-muted">confirmed this session</div></div>
+                    <div class="ql-bar"><div id="ql-bar-fill"></div></div>
+                    <div class="text-sm">Goal <input type="number" id="ql-goal" class="ql-goal-input" value="50" min="1"></div>
+                    <div class="text-sm text-muted">·&nbsp; <span id="ql-pending">—</span> left in this table</div>
+                </div>
+
+                <div id="ql-error" class="error-state" style="display:none;"></div>
+                <div id="ql-empty" class="empty-state" style="display:none;"></div>
+
+                <div class="ql-stage" id="ql-stage">
                 <div class="ql-imgbox">
                     <img id="ql-img" class="ql-img" alt="shoe crop" src="">
                     <div class="ql-imgmeta" id="ql-imgmeta"></div>
@@ -182,15 +228,26 @@
                     </div>
                 </div>
             </div>
+            </div><!-- /ql-labelview -->
         </div>
     </main>
 </div>
 
 <div class="ql-zoom-overlay" id="ql-zoom"><img id="ql-zoom-img" alt="zoom" src=""></div>
 
+<!-- Worker name prompt (first visit / Change) -->
+<div class="ql-name-overlay" id="ql-name-overlay">
+    <div class="ql-name-box">
+        <h3>Who's labeling?</h3>
+        <div class="text-sm text-muted">Your name tags the tables you claim so two people never label the same one.</div>
+        <input type="text" id="ql-name-input" placeholder="e.g. Alex" maxlength="24" autocomplete="off">
+        <button id="ql-name-go" type="button">Start labeling</button>
+    </div>
+</div>
+
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=17"></script>
+<script src="js/api.js?v=18"></script>
 <script src="js/utils.js"></script>
-<script src="js/quick_label.js?v=1"></script>
+<script src="js/quick_label.js?v=2"></script>
 </body>
 </html>

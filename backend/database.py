@@ -205,6 +205,10 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
                                                   # (human changed it) — a free AI-accuracy meter
         ("table_photos", "claimed_at", "TEXT"),   # when a worker claimed the job; lets the
                                                   # stale sweeper re-queue orphaned 'processing' rows
+        ("table_photos", "label_claimed_by", "TEXT"),  # multi-worker gold labeling: who is
+                                                       # labeling this table now (Quick Label)
+        ("table_photos", "label_claimed_at", "TEXT"),  # claim timestamp; lease auto-expires so a
+                                                       # closed tab never locks a table forever
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")

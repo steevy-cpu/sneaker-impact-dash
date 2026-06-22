@@ -21,8 +21,8 @@ from backend.config import (APP_MODE, IMAGES_DIR, SIM_IMAGES_DIR, FRONTEND_DIR,
                             TABLE_PHOTOS_DIR, PAIRS_DIR, LABEL_DATA_DIR)
 from backend.database import init_db, get_connection
 from backend.routes import (airtable_outbox, analytics, batches, capture,
-                            config_station, export, health, label_data, pairs,
-                            reidentify, shipment, shoes, simulation, tableau)
+                            config_station, export, health, label_data, labeling,
+                            pairs, reidentify, shipment, shoes, simulation, tableau)
 
 # Directories must exist before app.mount() is called (mount happens at import time)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -146,6 +146,7 @@ app.include_router(label_data.router)      # curated training set browser: /api/
 app.include_router(airtable_outbox.router) # durable send-when-available queue: /api/airtable-outbox
 app.include_router(reidentify.router)      # backfill brand+model for unknown pairs: /api/reidentify
 app.include_router(tableau.router)         # dataset/AI/sync visualizations: /api/tableau/stats
+app.include_router(labeling.router)        # multi-worker table claiming: /api/labeling/*
 
 
 # ---------------------------------------------------------------------------
