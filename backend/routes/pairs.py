@@ -7,6 +7,8 @@ review workflow now applies here, at the pair level.
 """
 import json
 import sqlite3
+import threading
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +20,13 @@ from backend.models import PairReviewUpdate
 router = APIRouter(prefix="/api/pairs", tags=["Pairs"])
 
 VALID_REVIEW = {"NOT_REQUIRED", "PENDING", "COMPLETED"}
+
+# A "gold" pair = a human confirmed it with a real brand (Quick Label / Pairs
+# Review). Indexed on review_status, so this predicate is cheap.
+GOLD_WHERE = ("review_status = 'COMPLETED' AND final_make IS NOT NULL "
+              "AND final_make NOT IN ('', 'unknown')")
+_gold_stats = {"ts": 0.0, "data": None}      # 15s cache so the header is free
+_gold_lock = threading.Lock()
 
 
 def _json_or_none(value):
@@ -122,6 +131,62 @@ def gold_queue(
                     break
         queues = [q for q in queues if q]
     return {"total_pending": total, "items": [pair_to_dict(r) for r in ordered]}
+
+
+def _gold_stats_cached(conn):
+    """Header stats over the gold set (total, confirmed/corrected split, brand
+    counts). Cached 15s so the Gold Labels page header is effectively free even
+    if several people watch it. Cheap anyway (indexed on review_status)."""
+    now = time.time()
+    if _gold_stats["data"] is not None and (now - _gold_stats["ts"]) < 15:
+        return _gold_stats["data"]
+    with _gold_lock:
+        if _gold_stats["data"] is not None and (time.time() - _gold_stats["ts"]) < 15:
+            return _gold_stats["data"]
+        row = conn.execute(
+            f"""SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN label_action='corrected' THEN 1 ELSE 0 END) AS corrected,
+                   SUM(CASE WHEN label_action='confirmed' THEN 1 ELSE 0 END) AS confirmed
+                FROM pairs WHERE {GOLD_WHERE}""").fetchone()
+        makes = conn.execute(
+            f"SELECT final_make, COUNT(*) AS n FROM pairs WHERE {GOLD_WHERE} "
+            "GROUP BY final_make ORDER BY n DESC").fetchall()
+        data = {
+            "total":     row["total"] or 0,
+            "corrected": row["corrected"] or 0,
+            "confirmed": row["confirmed"] or 0,
+            "by_make":   [{"make": m["final_make"], "count": m["n"]} for m in makes],
+        }
+        _gold_stats["data"], _gold_stats["ts"] = data, time.time()
+        return data
+
+
+@router.get("/gold", summary="Browse the human-verified gold labels")
+def gold_labels(
+    page:      int = Query(1, ge=1),
+    page_size: int = Query(60, ge=1, le=200),
+    make:      Optional[str] = Query(None, description="filter to one confirmed brand"),
+    conn:      sqlite3.Connection = Depends(get_db),
+):
+    """Paginated view of human-confirmed pairs (the gold training set) — newest
+    first. Returns light header stats + one page of items. Indexed + paginated,
+    so it stays fast as the set grows; the page replaces its grid each turn so
+    the browser never holds more than page_size images."""
+    where, params = GOLD_WHERE, []
+    if make:
+        where += " AND final_make = ?"; params.append(make)
+    total = conn.execute(f"SELECT COUNT(*) FROM pairs WHERE {where}", params).fetchone()[0]
+    offset = (page - 1) * page_size
+    rows = conn.execute(
+        f"SELECT * FROM pairs WHERE {where} ORDER BY created_at DESC, id DESC "
+        "LIMIT ? OFFSET ?", params + [page_size, offset]).fetchall()
+    return {
+        "total":     total,
+        "page":      page,
+        "page_size": page_size,
+        "stats":     _gold_stats_cached(conn),
+        "items":     [pair_to_dict(r) for r in rows],
+    }
 
 
 @router.get("/{pair_id}", summary="Get a single pair")

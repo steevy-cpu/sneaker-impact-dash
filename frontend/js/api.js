@@ -139,6 +139,13 @@ const api = {
         return apiFetch(`/api/pairs/gold-queue?limit=${limit}`);
     },
 
+    /** Browse the human-verified gold labels (paginated + header stats). */
+    getGoldLabels({ page = 1, page_size = 60, make = "" } = {}) {
+        const q = new URLSearchParams({ page, page_size });
+        if (make) q.set("make", make);
+        return apiFetch(`/api/pairs/gold?${q.toString()}`);
+    },
+
     /* ---- Multi-worker table claiming (Quick Label) ---- */
     /** Tables with pending pairs, claim-aware (mine + free, others hidden). */
     getLabelTables(worker) {
