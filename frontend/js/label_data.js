@@ -6,7 +6,7 @@
  * make/color filters + a stats bar; click a card for the full metadata.
  */
 
-const LD = { stats: null };
+const LD = { stats: null, page: 1, pageSize: 200, total: 0 };
 
 function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -37,33 +37,55 @@ function fillFilter(sel, counts, label) {
 
 /* ---- List ------------------------------------------------------------ */
 
-async function loadList() {
+async function loadList(page) {
+    if (page == null) page = LD.page;
     const c = document.getElementById("ld-container");
     const make = document.getElementById("ld-make").value;
     const color = document.getElementById("ld-color").value;
     let data;
     try {
-        data = await api.getLabelData({ make, color, page_size: 200 });
+        data = await api.getLabelData({ make, color, page, page_size: LD.pageSize });
     } catch (err) {
         showError(c, "Could not load label data: " + err.message);
         return;
     }
-    // Stats + filter options reflect the FULL set (returned regardless of filter).
+    LD.page = data.page;
+    LD.total = data.total;          // count for the CURRENT filter (drives pagination)
+    // Stats + filter options reflect the FULL set (returned regardless of filter/page).
     LD.stats = data.stats;
     renderStats(data.stats);
     fillFilter(document.getElementById("ld-make"), data.stats.by_make, "All makes");
     fillFilter(document.getElementById("ld-color"), data.stats.by_color, "All colors");
 
     if (!data.items.length) {
+        // Past page 1 with nothing here (e.g. items deleted) → snap back to page 1.
+        if (data.page > 1) { return loadList(1); }
         const why = (make || color)
             ? "No entries match this filter."
             : "No label data yet. Pairs land here automatically once they're auto-approved (high make + model confidence) or you confirm them in Pairs Review.";
         showEmpty(c, why);
+        renderPagination();
         return;
     }
+    // Replace the grid each page → the DOM never holds more than one page of cards.
     c.innerHTML = `<div class="ld-grid">${data.items.map(cardHTML).join("")}</div>`;
     c.querySelectorAll(".ld-card").forEach(card =>
         card.addEventListener("click", () => openDetail(card.dataset.idx, data.items)));
+    renderPagination();
+    c.scrollIntoView({ block: "start" });
+}
+
+function renderPagination() {
+    const el = document.getElementById("ld-pagination");
+    const totalPages = Math.max(1, Math.ceil(LD.total / LD.pageSize));
+    if (LD.total <= LD.pageSize) { el.style.display = "none"; el.innerHTML = ""; return; }
+    el.style.display = "flex";
+    el.innerHTML =
+        `<button class="page-btn" id="ld-prev" ${LD.page <= 1 ? "disabled" : ""}>Prev</button>
+         <span class="page-info">Page ${LD.page} of ${totalPages} · ${LD.total} entries</span>
+         <button class="page-btn" id="ld-next" ${LD.page >= totalPages ? "disabled" : ""}>Next</button>`;
+    document.getElementById("ld-prev").addEventListener("click", () => loadList(LD.page - 1));
+    document.getElementById("ld-next").addEventListener("click", () => loadList(LD.page + 1));
 }
 
 function cardHTML(e, idx) {
@@ -105,9 +127,10 @@ function openDetail(idx, items) {
 
 /* ---- Init ------------------------------------------------------------ */
 
-document.getElementById("refresh-btn").addEventListener("click", loadList);
-document.getElementById("ld-make").addEventListener("change", loadList);
-document.getElementById("ld-color").addEventListener("change", loadList);
+// Filter/refresh reset to page 1 (the result set changes underneath).
+document.getElementById("refresh-btn").addEventListener("click", () => loadList(1));
+document.getElementById("ld-make").addEventListener("change", () => loadList(1));
+document.getElementById("ld-color").addEventListener("change", () => loadList(1));
 document.getElementById("ld-close").addEventListener("click", () => document.getElementById("ld-modal").classList.remove("open"));
 document.getElementById("ld-modal").addEventListener("click", (e) => { if (e.target.id === "ld-modal") e.currentTarget.classList.remove("open"); });
 
@@ -120,7 +143,7 @@ document.getElementById("ld-delete").addEventListener("click", async (e) => {
         await api.deleteLabelData(fn);
         showToast("Deleted " + fn, "info", 1800);
         document.getElementById("ld-modal").classList.remove("open");
-        loadList();
+        loadList();   // reload current page (snaps back a page if it's now empty)
     } catch (err) {
         showToast("Delete failed: " + err.message, "error", 2800);
     } finally {
@@ -128,4 +151,4 @@ document.getElementById("ld-delete").addEventListener("click", async (e) => {
     }
 });
 
-loadList();
+loadList(1);

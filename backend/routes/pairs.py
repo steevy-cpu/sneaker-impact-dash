@@ -124,8 +124,9 @@ def review_pair(
 @router.delete("/{pair_id}", summary="Delete a single pair (+ its crop file)")
 def delete_pair(pair_id: str, conn: sqlite3.Connection = Depends(get_db)):
     """Permanently remove one pair: its DB row and crop file on disk. Also
-    decrements the parent table photo's `num_pairs` so the count stays honest.
-    The parent table photo and its Airtable outbox row are left untouched."""
+    decrements the parent table photo's `num_pairs` so the count stays honest,
+    then recomputes the box's Airtable Brand Summary from the remaining pairs
+    (a deleted YOLO false-positive must not keep inflating the brand counts)."""
     row = conn.execute(
         "SELECT image_path, table_photo_id FROM pairs WHERE id = ?", (pair_id,)
     ).fetchone()
@@ -144,4 +145,41 @@ def delete_pair(pair_id: str, conn: sqlite3.Connection = Depends(get_db)):
             (IMAGES_DIR / row["image_path"].replace("/images/", "", 1)).unlink()
         except OSError:
             pass
+
+    # Deleting a pair changes the box's brand makeup, so the Airtable "Brand
+    # Summary" must be recomputed from the REMAINING pairs and re-pushed. This is
+    # best-effort and fully isolated: it can never make the delete fail, and the
+    # outbox retry worker is the durable fallback if the live push doesn't land.
+    try:
+        _resync_brand_summary(conn, row["table_photo_id"])
+    except Exception as exc:                            # noqa: BLE001
+        print(f"[pairs] brand-summary re-sync after delete failed for "
+              f"{row['table_photo_id']}: {exc}", flush=True)
+
     return {"deleted": True, "id": pair_id}
+
+
+def _resync_brand_summary(conn: sqlite3.Connection, table_photo_id: str):
+    """Recompute the box's brand summary from its remaining pairs and re-arm the
+    Airtable outbox so the corrected value is pushed. No-op when this photo has
+    no outbox row (no barcode/shipment was scanned -> nothing syncs).
+
+    An empty summary (last branded pair removed) is intentionally NOT pushed:
+    `_fields()` already omits an empty Brand Summary, so this matches the
+    existing behaviour rather than clearing the Airtable field. The push is an
+    idempotent upsert-by-barcode, so re-running it is always safe."""
+    has_outbox = conn.execute(
+        "SELECT 1 FROM airtable_outbox WHERE table_photo_id = ?", (table_photo_id,)
+    ).fetchone()
+    if not has_outbox:
+        return
+    pairs = [dict(r) for r in conn.execute(
+        "SELECT make, final_make FROM pairs WHERE table_photo_id = ?",
+        (table_photo_id,),
+    ).fetchall()]
+    from backend.services.airtable_sync import brand_summary_from_pairs
+    from backend.services.airtable_outbox import set_brand_summary, try_one_async
+    summary = brand_summary_from_pairs(pairs)
+    if summary:
+        set_brand_summary(conn, table_photo_id, summary)   # re-arms status=pending
+        try_one_async(table_photo_id)

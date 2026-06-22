@@ -119,6 +119,9 @@ async function openDetail(id) {
                 <div>${esc(p.detected_color || "—")} · <b>${esc(p.final_make || p.make || "—")}</b> / ${esc(p.final_model || p.model || "—")}</div>
                 <div class="text-xs text-muted">${p.pair_score != null ? "🔗 " + Math.round(p.pair_score * 100) + "% match · " : "single · "}${reviewStatusBadgeHTML(p.review_status)}</div>
             </div>
+            <button class="tp-pair-del btn-danger" type="button" data-pair-id="${esc(p.id)}"
+                    title="Delete this detection (e.g. YOLO flagged something that isn't a shoe)"
+                    style="margin-left:auto;flex:0 0 auto;align-self:center;padding:4px 10px;white-space:nowrap;">✕ Delete</button>
         </div>`;
     }).join("") || `<div class="empty-state">No pairs ${t.status === "completed" ? "detected" : "yet"}.</div>`;
 
@@ -180,9 +183,27 @@ document.getElementById("refresh-btn").addEventListener("click", loadList);
 document.getElementById("tp-close").addEventListener("click", () => document.getElementById("tp-modal").classList.remove("open"));
 
 // Lightbox: open on crop click (delegated, since pairs re-render each open), nav + keyboard.
-document.getElementById("tp-modal-body").addEventListener("click", (e) => {
+document.getElementById("tp-modal-body").addEventListener("click", async (e) => {
     const thumb = e.target.closest(".tp-pair-thumb");
-    if (thumb) openLightbox(Number(thumb.dataset.lbIndex));
+    if (thumb) { openLightbox(Number(thumb.dataset.lbIndex)); return; }
+
+    // Delete one detected pair (e.g. a YOLO false-positive that isn't a shoe).
+    const del = e.target.closest(".tp-pair-del");
+    if (del) {
+        const pid = del.dataset.pairId;
+        if (!confirm(`Delete detection ${pid}?\n\nUse this when YOLO flagged something that isn't a shoe. It permanently removes the pair and its crop, decrements the pair count, and updates the Airtable brand summary. This cannot be undone.`)) return;
+        del.disabled = true; del.textContent = "Deleting…";
+        const photoId = document.getElementById("tp-delete").dataset.id;   // current modal's photo
+        try {
+            await api.deletePair(pid);
+            showToast("Deleted " + pid, "info", 1800);
+            await openDetail(photoId);   // re-fetch: pairs, count, and crop gallery rebuilt from server
+            loadList();                  // refresh the list so its pair count stays in sync
+        } catch (err) {
+            showToast(err.message || "Delete failed", "error", 3000);
+            del.disabled = false; del.textContent = "✕ Delete";
+        }
+    }
 });
 document.getElementById("lb-close").addEventListener("click", closeLightbox);
 document.getElementById("lb-prev").addEventListener("click", () => stepLightbox(-1));
