@@ -137,14 +137,23 @@ class EngineWorker:
             ).fetchone()
             if not row:
                 return None
+            # SERIALIZE GPU work across BOTH service workers (http + https): claim
+            # ONLY when nothing else is already processing. Two concurrent engine
+            # pipelines (each YOLOE seg + DINOv2 embed + the ollama VLM) over-
+            # subscribe the 16GB GPU and reliably WEDGE ollama -> 1800s timeouts
+            # (observed 2026-06-24). The `NOT EXISTS` makes this atomic under
+            # SQLite's write lock: whichever worker gets the lock first claims,
+            # the other sees a processing row and backs off. One-at-a-time is
+            # slower but reliable; the stale sweeper still recovers a true hang.
             cur = conn.execute(
                 "UPDATE table_photos SET status = 'processing', claimed_at = ? "
-                "WHERE id = ? AND status = 'pending'",
+                "WHERE id = ? AND status = 'pending' "
+                "AND NOT EXISTS (SELECT 1 FROM table_photos WHERE status = 'processing')",
                 (datetime.now().isoformat(), row["id"]),
             )
             conn.commit()
             if cur.rowcount == 0:
-                return None   # claimed by someone else between SELECT and UPDATE
+                return None   # another worker is busy, or claimed this row first
             return {"id": row["id"], "image_path": row["image_path"],
                     "barcode": row["barcode"]}
         finally:
