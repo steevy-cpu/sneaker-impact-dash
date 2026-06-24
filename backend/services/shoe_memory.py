@@ -94,45 +94,69 @@ def clear(conn: sqlite3.Connection, embedder: Optional[str] = None) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Lookup (cached in-process snapshot, refreshed on table change)
+# Lookup (cached in-process snapshot, numpy-vectorized when available)
 # ---------------------------------------------------------------------------
 
+try:
+    import numpy as _np                               # CPU-only; pinned <2.4 in the venv
+    _HAVE_NUMPY = True
+except Exception:                                      # pragma: no cover - fallback
+    _np = None
+    _HAVE_NUMPY = False
+
+
 class _MemoryIndex:
-    """Holds the loaded vectors for ONE embedder, rebuilt when the row count for
-    that embedder changes. The background worker is single-threaded, so a plain
-    module-level snapshot is safe and avoids re-reading the BLOBs every lookup."""
+    """Holds the loaded vectors for ONE embedder, rebuilt when its row count
+    changes. Vectorized with numpy — a single matrix-vector product per lookup
+    (~ms over 10k x 1024) instead of a pure-Python dot per row (~seconds), which
+    made the cache a net slowdown. Pure-Python fallback kept for a numpy-less env.
+    The background worker is single-threaded, so a module-level snapshot is safe."""
 
     def __init__(self):
         self.embedder = None
         self.count = -1
-        self.rows = []   # list of (vec_list, meta_dict)
+        self.meta = []            # list of meta dicts, parallel to rows
+        self.mat = None           # numpy (N, D) float32 when numpy is present
+        self.rows = []            # [(vec_list, meta)] for the pure-Python fallback
 
     def invalidate(self):
         self.count = -1
 
     def append(self, embedder: str, vec, meta: dict):
-        """Keep a warm snapshot warm after a single insert (write-back), instead
-        of forcing a full reload on the next lookup."""
-        if self.embedder == embedder and self.count >= 0:
+        """Keep a warm snapshot warm after a single insert (write-back)."""
+        if self.embedder != embedder or self.count < 0:
+            return
+        self.meta.append(meta)
+        if _HAVE_NUMPY:
+            v = _np.asarray(vec, dtype="float32").reshape(1, -1)
+            self.mat = v if self.mat is None else _np.vstack([self.mat, v])
+        else:
             self.rows.append((list(vec), meta))
-            self.count += 1
+        self.count += 1
 
     def ensure(self, conn: sqlite3.Connection, embedder: str):
         n = count(conn, embedder)
         if self.embedder == embedder and self.count == n:
             return
-        rows = []
+        meta, vecs, rows = [], [], []
         for r in conn.execute(
             "SELECT embedding, brand, model, color, source, confidence, source_ref "
             "FROM shoe_memory WHERE embedder = ?", (embedder,)
         ).fetchall():
-            rows.append((
-                unpack_vector(r["embedding"]),
-                {"brand": r["brand"], "model": r["model"], "color": r["color"],
+            m = {"brand": r["brand"], "model": r["model"], "color": r["color"],
                  "source": r["source"], "confidence": r["confidence"],
-                 "source_ref": r["source_ref"]},
-            ))
-        self.embedder, self.count, self.rows = embedder, n, rows
+                 "source_ref": r["source_ref"]}
+            meta.append(m)
+            if _HAVE_NUMPY:
+                vecs.append(_np.frombuffer(r["embedding"], dtype="<f4"))
+            else:
+                rows.append((unpack_vector(r["embedding"]), m))
+        self.embedder, self.count, self.meta = embedder, n, meta
+        if _HAVE_NUMPY:
+            self.mat = _np.vstack(vecs).astype("float32") if vecs else None
+            self.rows = []
+        else:
+            self.rows, self.mat = rows, None
 
 
 _INDEX = _MemoryIndex()
@@ -151,22 +175,36 @@ def lookup(conn: sqlite3.Connection, vec, *, embedder: str, min_sim: float,
     DINOv2's silhouette-over-identity bias (see the 2026-06-24 calibration).
 
     Result: {brand, model, color, source, confidence, similarity, agree, k,
-    source_ref}. Pure-Python dot over a cached snapshot; top_k=1 degrades to a
-    plain nearest-neighbour match."""
-    q = _l2_normalize(vec) if normalize else list(vec)
+    source_ref}. top_k=1 degrades to a plain nearest-neighbour match."""
     _INDEX.ensure(conn, embedder)
-
-    scored = []
-    for v, meta in _INDEX.rows:
-        if len(v) != len(q):
-            continue
-        sim = _dot(q, v)
-        if sim >= min_sim:
-            scored.append((sim, meta))
-    if len(scored) < min_agree:
+    if _INDEX.count <= 0:
         return None
-    scored.sort(key=lambda s: s[0], reverse=True)
-    top = scored[:max(1, top_k)]
+
+    if _HAVE_NUMPY and _INDEX.mat is not None:
+        q = _np.asarray(vec, dtype="float32")
+        if normalize:
+            q = q / (float(_np.linalg.norm(q)) or 1.0)
+        if q.shape[0] != _INDEX.mat.shape[1]:
+            return None
+        sims = _INDEX.mat @ q                          # (N,) cosine (rows L2-normalized)
+        cand = _np.where(sims >= min_sim)[0]
+        if cand.size < min_agree:
+            return None
+        k = min(max(1, top_k), int(cand.size))
+        topc = cand[_np.argsort(sims[cand])[::-1][:k]]
+        top = [(float(sims[i]), _INDEX.meta[int(i)]) for i in topc]
+    else:
+        q = _l2_normalize(vec) if normalize else list(vec)
+        scored = []
+        for v, meta in _INDEX.rows:
+            if len(v) == len(q):
+                s = _dot(q, v)
+                if s >= min_sim:
+                    scored.append((s, meta))
+        if len(scored) < min_agree:
+            return None
+        scored.sort(key=lambda s: s[0], reverse=True)
+        top = scored[:max(1, top_k)]
 
     # Majority brand among the top-k (case-insensitive tally).
     tally = {}

@@ -120,15 +120,16 @@ CLOUD_IDENTIFY_ENABLED = (
 # OFF: the lookup only runs when SEEN_SHOE_ENABLED=1, so the live flow is
 # unchanged until we've calibrated the threshold offline (via /reidentify).
 SEEN_SHOE_ENABLED  = os.getenv("SEEN_SHOE_ENABLED", "0") not in ("0", "false", "False")
-# CONSERVATIVE auto-accept policy, set by the 2026-06-24 offline calibration:
-# require the TOP-K nearest neighbours (cosine >= MIN_SIM) to AGREE on brand
-# (>= MIN_AGREE of them). Single-NN precision plateaus at ~86%; top-3 agreement
-# at 0.96 lifts it to ~91% (the precision/coverage knee). DINOv2 ranks
-# silhouette over identity, so the agreement vote — not a higher threshold or a
-# color guard (which didn't help) — is what buys precision.
+# Auto-accept policy. SINGLE nearest-neighbour at cosine >= 0.96, set by the
+# 2026-06-24 LIVE re-calibration (queried today's real shoes against the cache):
+# single-NN @0.96 = ~24% deflection at ~86% brand precision (the precision
+# ceiling). The earlier top-3-agreement idea was an artefact of a stratified
+# sample — on the natural live distribution it fired ~0% of the time AND was
+# LESS precise (DINOv2's silhouette bias makes dense same-shape/wrong-brand
+# clusters). So: top_k=1, min_agree=1. Color guard didn't help either.
 SEEN_SHOE_MIN_SIM  = float(os.getenv("SEEN_SHOE_MIN_SIM", "0.96"))
-SEEN_SHOE_TOP_K    = int(os.getenv("SEEN_SHOE_TOP_K", "3"))     # neighbours to consult
-SEEN_SHOE_MIN_AGREE = int(os.getenv("SEEN_SHOE_MIN_AGREE", "2"))  # must share the brand
+SEEN_SHOE_TOP_K    = int(os.getenv("SEEN_SHOE_TOP_K", "1"))     # neighbours to consult
+SEEN_SHOE_MIN_AGREE = int(os.getenv("SEEN_SHOE_MIN_AGREE", "1"))  # must share the brand
 
 # --- FedEx Track (diagnostic lookup for no_row boxes on the Airtable Sync page) -
 # Resolve a scanned FedEx tracking number to shipment details (status, weight,
