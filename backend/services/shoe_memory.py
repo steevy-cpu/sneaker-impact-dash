@@ -68,9 +68,9 @@ def add_entry(conn: sqlite3.Connection, vec, *, embedder: str, brand=None,
     )
     conn.commit()
     # Keep a warm snapshot consistent without a full reload (write-back path).
-    _INDEX.append(embedder, v, {"brand": brand, "model": model, "color": color,
-                                "source": source, "confidence": confidence,
-                                "source_ref": source_ref})
+    _INDEX.append(embedder, v, {"id": cur.lastrowid, "brand": brand, "model": model,
+                                "color": color, "source": source,
+                                "confidence": confidence, "source_ref": source_ref})
     return cur.lastrowid
 
 
@@ -140,12 +140,12 @@ class _MemoryIndex:
             return
         meta, vecs, rows = [], [], []
         for r in conn.execute(
-            "SELECT embedding, brand, model, color, source, confidence, source_ref "
+            "SELECT id, embedding, brand, model, color, source, confidence, source_ref "
             "FROM shoe_memory WHERE embedder = ?", (embedder,)
         ).fetchall():
-            m = {"brand": r["brand"], "model": r["model"], "color": r["color"],
-                 "source": r["source"], "confidence": r["confidence"],
-                 "source_ref": r["source_ref"]}
+            m = {"id": r["id"], "brand": r["brand"], "model": r["model"],
+                 "color": r["color"], "source": r["source"],
+                 "confidence": r["confidence"], "source_ref": r["source_ref"]}
             meta.append(m)
             if _HAVE_NUMPY:
                 vecs.append(_np.frombuffer(r["embedding"], dtype="<f4"))
@@ -228,3 +228,114 @@ def lookup(conn: sqlite3.Connection, vec, *, embedder: str, min_sim: float,
             out["k"] = len(top)
             return out
     return None
+
+
+# ---------------------------------------------------------------------------
+# Maintenance: dedup write-back, size-cap eviction, gold correction
+# ---------------------------------------------------------------------------
+
+def nearest(conn: sqlite3.Connection, vec, *, embedder: str,
+            normalize: bool = True) -> Optional[tuple]:
+    """Return (similarity, meta) of the single nearest entry (no threshold), or
+    None when the cache is empty. meta includes the row 'id'."""
+    _INDEX.ensure(conn, embedder)
+    if _INDEX.count <= 0:
+        return None
+    if _HAVE_NUMPY and _INDEX.mat is not None:
+        q = _np.asarray(vec, dtype="float32")
+        if normalize:
+            q = q / (float(_np.linalg.norm(q)) or 1.0)
+        if q.shape[0] != _INDEX.mat.shape[1]:
+            return None
+        sims = _INDEX.mat @ q
+        i = int(_np.argmax(sims))
+        return (float(sims[i]), _INDEX.meta[i])
+    q = _l2_normalize(vec) if normalize else list(vec)
+    best, best_sim = None, -1.0
+    for v, meta in _INDEX.rows:
+        if len(v) == len(q):
+            s = _dot(q, v)
+            if s > best_sim:
+                best_sim, best = s, meta
+    return (best_sim, best) if best is not None else None
+
+
+def bump_seen(conn: sqlite3.Connection, entry_id: int):
+    """Increment an entry's n_seen (a duplicate sighting). Does NOT touch the
+    in-memory snapshot — n_seen isn't used by lookup, only by eviction."""
+    conn.execute(
+        "UPDATE shoe_memory SET n_seen = n_seen + 1, updated_at = ? WHERE id = ?",
+        (datetime.now().isoformat(), entry_id),
+    )
+    conn.commit()
+
+
+def trim(conn: sqlite3.Connection, embedder: str, max_rows: int) -> int:
+    """Keep the cache bounded: when over max_rows, evict the least-valuable
+    NON-gold rows (lowest n_seen, then oldest). Gold (human-verified) is never
+    evicted. Returns how many were removed. No-op when max_rows<=0."""
+    if max_rows <= 0:
+        return 0
+    n = count(conn, embedder)
+    if n <= max_rows:
+        return 0
+    excess = n - max_rows
+    ids = [r[0] for r in conn.execute(
+        "SELECT id FROM shoe_memory WHERE embedder = ? AND source != 'gold' "
+        "ORDER BY n_seen ASC, updated_at ASC LIMIT ?", (embedder, excess)
+    ).fetchall()]
+    if ids:
+        conn.executemany("DELETE FROM shoe_memory WHERE id = ?", [(i,) for i in ids])
+        conn.commit()
+        _INDEX.invalidate()
+    return len(ids)
+
+
+def remember(conn: sqlite3.Connection, vec, *, embedder: str, brand=None, model=None,
+             color=None, source="cloud", confidence=None, source_ref=None,
+             dedup_sim: float = 0.985, max_rows: int = 0, normalize: bool = False) -> int:
+    """Write-back with DEDUP + SIZE-CAP. If a near-identical entry already exists
+    (cosine >= dedup_sim — i.e. we've seen this exact shoe), just bump its n_seen
+    instead of storing a duplicate (so repeated shoes don't bloat the cache and
+    slow lookups). Otherwise add it, then trim to max_rows. Returns the row id
+    (existing on dedup, new otherwise)."""
+    near = nearest(conn, vec, embedder=embedder, normalize=normalize)
+    if near and near[0] >= dedup_sim and near[1].get("id") is not None:
+        bump_seen(conn, near[1]["id"])
+        return near[1]["id"]
+    rid = add_entry(conn, vec, embedder=embedder, brand=brand, model=model,
+                    color=color, source=source, confidence=confidence,
+                    source_ref=source_ref, normalize=normalize)
+    if max_rows and max_rows > 0:
+        trim(conn, embedder, max_rows)
+    return rid
+
+
+def correct_near(conn: sqlite3.Connection, vec, *, embedder: str, brand, model,
+                 sim_min: float = 0.985, normalize: bool = False) -> int:
+    """Gold correction: relabel near-identical NON-gold entries (cosine >= sim_min,
+    i.e. other crops of the SAME shoe) to a confirmed gold brand/model, so a
+    wrong silver label can't keep matching. Returns how many were corrected."""
+    _INDEX.ensure(conn, embedder)
+    if not (_HAVE_NUMPY and _INDEX.mat is not None):
+        return 0
+    q = _np.asarray(vec, dtype="float32")
+    if normalize:
+        q = q / (float(_np.linalg.norm(q)) or 1.0)
+    if q.shape[0] != _INDEX.mat.shape[1]:
+        return 0
+    sims = _INDEX.mat @ q
+    bl = (brand or "").strip().lower()
+    fix = [int(_INDEX.meta[i]["id"]) for i in _np.where(sims >= sim_min)[0]
+           if _INDEX.meta[i].get("source") != "gold"
+           and (_INDEX.meta[i].get("brand") or "").strip().lower() != bl]
+    if not fix:
+        return 0
+    conn.executemany(
+        "UPDATE shoe_memory SET brand = ?, model = ?, source = 'gold-corrected', "
+        "updated_at = ? WHERE id = ?",
+        [(brand, model, datetime.now().isoformat(), i) for i in fix],
+    )
+    conn.commit()
+    _INDEX.invalidate()
+    return len(fix)

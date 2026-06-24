@@ -232,12 +232,51 @@ def seed(entries, vecs, db_path, embedder_name, log=print):
     conn.close()
 
 
+def gold_feed(db_path, pairs_dir, embedder, embedder_name, log=print):
+    """DIRECT gold-crop feed: embed each human-confirmed pair crop and upsert it
+    into shoe_memory as 'gold', then relabel near-identical silver to match. This
+    replaces the sparse (source_photo, source_pair) key-match used at seed time
+    (which only caught a couple) — here we embed the actual confirmed crops."""
+    import cv2
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from backend.services import shoe_memory as sm
+    conn = sqlite3.connect(db_path); conn.row_factory = sqlite3.Row
+    # Authoritative rebuild of gold: drop prior gold crops, re-embed from the DB.
+    conn.execute("DELETE FROM shoe_memory WHERE source = 'gold'"); conn.commit()
+    sm._INDEX.invalidate()
+    rows = conn.execute(
+        "SELECT id, image_path, final_make, final_model, final_color FROM pairs "
+        "WHERE review_status='COMPLETED' AND final_make IS NOT NULL"
+    ).fetchall()
+    added = corrected = skipped = 0
+    for r in rows:
+        crop = os.path.join(pairs_dir, os.path.basename(r["image_path"] or ""))
+        img = cv2.imread(crop) if os.path.exists(crop) else None
+        if img is None:
+            skipped += 1; continue
+        try:
+            vec = [float(x) for x in embedder.embed(img)]
+        except Exception as exc:
+            log(f"  embed fail {crop}: {exc}"); skipped += 1; continue
+        sm.add_entry(conn, vec, embedder=embedder_name, brand=r["final_make"],
+                     model=r["final_model"], color=r["final_color"], source="gold",
+                     source_ref=str(r["id"]), normalize=False)
+        added += 1
+        corrected += sm.correct_near(conn, vec, embedder=embedder_name,
+                                     brand=r["final_make"], model=r["final_model"],
+                                     sim_min=0.985, normalize=False)
+    log(f"gold feed: {added} gold crops embedded, {corrected} near-silver corrected, "
+        f"{skipped} skipped (missing crop). Total now: {sm.count(conn, embedder_name)}")
+    conn.close()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine-dir", required=True)
     ap.add_argument("--label-dir", required=True)
     ap.add_argument("--db", default=None, help="sneakers.db (gold source; seed target)")
-    ap.add_argument("--mode", choices=["calibrate", "seed"], default="calibrate")
+    ap.add_argument("--pairs-dir", default=None, help="dash images/pairs dir (for --mode gold)")
+    ap.add_argument("--mode", choices=["calibrate", "seed", "gold"], default="calibrate")
     ap.add_argument("--limit", type=int, default=None, help="cap #crops (sampling)")
     ap.add_argument("--save-npz", default=None, help="cache embeddings for fast re-analysis")
     args = ap.parse_args()
@@ -251,6 +290,15 @@ def main():
         print("embedder failed to load", file=sys.stderr); sys.exit(1)
     name = getattr(embedder, "name", "unknown")
     print(f"embedder: {name} ({getattr(embedder,'dim','?')}-d)")
+
+    # Gold mode embeds confirmed PAIR CROPS (not label_data) — handle it first.
+    if args.mode == "gold":
+        if not args.db:
+            print("--db required for gold", file=sys.stderr); sys.exit(1)
+        pairs_dir = args.pairs_dir or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "images", "pairs")
+        gold_feed(args.db, pairs_dir, embedder, name)
+        return
 
     gold = load_gold_map(args.db) if args.db else {}
     print(f"gold labels: {len(gold)}")

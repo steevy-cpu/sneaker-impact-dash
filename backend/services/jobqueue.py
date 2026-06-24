@@ -17,7 +17,8 @@ from backend.config import (ENGINE_ENABLED, ENGINE_JOB_TIMEOUT,
                             ENGINE_POLL_SECONDS, IMAGES_DIR,
                             PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN,
                             LOCAL_COLOR_CONF_MIN, SEEN_SHOE_ENABLED,
-                            SEEN_SHOE_MIN_SIM, SEEN_SHOE_TOP_K, SEEN_SHOE_MIN_AGREE)
+                            SEEN_SHOE_MIN_SIM, SEEN_SHOE_TOP_K, SEEN_SHOE_MIN_AGREE,
+                            SEEN_SHOE_DEDUP_SIM, SEEN_SHOE_MAX_ROWS)
 from backend.database import get_connection
 from backend.services import shoe_memory
 from backend.services.cloud_identify import cloud_enabled
@@ -239,11 +240,12 @@ class EngineWorker:
                         if (SEEN_SHOE_ENABLED and emb and emb_name
                                 and _known(make, 1.0, 0.0) and _known(model, 1.0, 0.0)):
                             try:
-                                shoe_memory.add_entry(
+                                shoe_memory.remember(
                                     conn, emb, embedder=emb_name, brand=make,
                                     model=model, color=color, source="cloud",
                                     confidence=mk_c, source_ref=f"{tp_id}_{idx}",
-                                    normalize=False)
+                                    dedup_sim=SEEN_SHOE_DEDUP_SIM,
+                                    max_rows=SEEN_SHOE_MAX_ROWS, normalize=False)
                             except Exception as exc:   # noqa: BLE001 - never fail a job
                                 print(f"[worker] cache write-back error: {exc}",
                                       flush=True)

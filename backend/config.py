@@ -130,6 +130,13 @@ SEEN_SHOE_ENABLED  = os.getenv("SEEN_SHOE_ENABLED", "0") not in ("0", "false", "
 SEEN_SHOE_MIN_SIM  = float(os.getenv("SEEN_SHOE_MIN_SIM", "0.96"))
 SEEN_SHOE_TOP_K    = int(os.getenv("SEEN_SHOE_TOP_K", "1"))     # neighbours to consult
 SEEN_SHOE_MIN_AGREE = int(os.getenv("SEEN_SHOE_MIN_AGREE", "1"))  # must share the brand
+# Write-back hygiene: don't store a duplicate when an almost-identical shoe is
+# already cached (cosine >= DEDUP_SIM) — bump its sighting count instead, so
+# repeated shoes don't bloat the cache and slow the lookup. MAX_ROWS caps the
+# cache (evicting the least-seen NON-gold rows first; gold is never evicted) so
+# the per-pair lookup stays fast as write-back accumulates over time.
+SEEN_SHOE_DEDUP_SIM = float(os.getenv("SEEN_SHOE_DEDUP_SIM", "0.985"))
+SEEN_SHOE_MAX_ROWS  = int(os.getenv("SEEN_SHOE_MAX_ROWS", "50000"))
 
 # --- FedEx Track (diagnostic lookup for no_row boxes on the Airtable Sync page) -
 # Resolve a scanned FedEx tracking number to shipment details (status, weight,
