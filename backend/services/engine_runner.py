@@ -49,6 +49,9 @@ def main():
     ap.add_argument("--ollama-model", default=None)
     ap.add_argument("--ollama-url", default=None)
     ap.add_argument("--model-timeout", type=int, default=None)
+    ap.add_argument("--emit-embedding", action="store_true",
+                    help="Emit a DINOv2 appearance embedding per pair (for the "
+                         "dash seen-shoe cache). Off by default = no extra work.")
     args = ap.parse_args()
 
     # Make the engine importable and run from its dir (so `import config`, the
@@ -98,15 +101,25 @@ def main():
         if min_frac > 0:
             area = h * w
             segs = [s for s in segs if s.area() >= min_frac * area]
+        # An appearance embedder is built lazily and SHARED: the visual/hybrid
+        # pairing methods need it, and --emit-embedding reuses the very same
+        # instance to embed each final crop (no second model load on the GPU).
+        embedder = None
+
+        def _get_embedder():
+            nonlocal embedder
+            if embedder is None:
+                from embedder_utils import build_image_embedder
+                embedder = build_image_embedder(config)
+            return embedder
+
         if getattr(config, "SEGMENT_PAIR", True):
             method = getattr(config, "SEGMENT_PAIR_METHOD", "visual")
             if method == "hybrid":
                 # Adjacency-first with an appearance veto + high-bar visual
                 # rescue. See pair_shoes_hybrid for the measured rationale.
-                from embedder_utils import build_image_embedder
-                embedder = build_image_embedder(config)
                 segs = pair_shoes_hybrid(
-                    image, segs, embedder,
+                    image, segs, _get_embedder(),
                     max_gap_frac=getattr(config, "SEGMENT_PAIR_MAX_GAP", 1.2),
                     veto_min=getattr(config, "SEGMENT_PAIR_VETO_MIN", 0.25),
                     rescue_min=getattr(config, "SEGMENT_PAIR_RESCUE_MIN", 0.80),
@@ -115,10 +128,8 @@ def main():
             elif method == "visual":
                 # Pair by appearance (DINOv2/CLIP) so shoes need not be tied.
                 # Reuses the same embedder the model-ID index uses.
-                from embedder_utils import build_image_embedder
-                embedder = build_image_embedder(config)
                 segs = pair_shoes_visual(
-                    image, segs, embedder,
+                    image, segs, _get_embedder(),
                     spatial_weight=getattr(config, "SEGMENT_PAIR_SPATIAL_WEIGHT", 0.15),
                     min_sim=getattr(config, "SEGMENT_PAIR_MIN_SIM", 0.5),
                     log=print,                          # stdout is redirected to stderr
@@ -156,6 +167,20 @@ def main():
 
             fname = f"{args.id_prefix}_{i}.jpg"
             cv2.imwrite(os.path.join(args.out_dir, fname), crop)
+
+            # Optional: a DINOv2 appearance embedding for the dash seen-shoe
+            # cache. Reuses the pairing embedder (no extra model load). Fail-safe:
+            # a bad embed just omits the field, never breaks identification.
+            embedding, embedder_name = None, None
+            if args.emit_embedding:
+                try:
+                    emb = _get_embedder()
+                    vec = emb.embed(crop)
+                    embedding = [float(x) for x in vec]
+                    embedder_name = getattr(emb, "name", None)
+                except Exception as exc:               # noqa: BLE001 - fail safe
+                    print(f"[engine] embed failed for {fname}: {exc}")
+
             result["pairs"].append({
                 "image_file":       fname,
                 "bbox":             [int(x1), int(y1), int(x2), int(y2)],
@@ -168,6 +193,8 @@ def main():
                 "model":            model,
                 "model_confidence": _f(model_conf),
                 "model_sources":    sources or [],
+                "embedding":        embedding,
+                "embedder":         embedder_name,
             })
 
         result["engine"] = {"segments": len(segs), "width": w, "height": h}

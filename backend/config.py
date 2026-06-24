@@ -113,6 +113,23 @@ CLOUD_IDENTIFY_ENABLED = (
     and bool(_CLOUD_KEYS.get(CLOUD_BACKEND))
 )
 
+# --- Seen-shoe cache (Tier 0: reuse a past identification before paying cloud) -
+# Before the cloud fallback, the worker looks up an uncertain pair's DINOv2
+# embedding against `shoe_memory` (past resolved shoes). A confident neighbour
+# reuses that brand/model for FREE, skipping the Gemini call. Built additive +
+# OFF: the lookup only runs when SEEN_SHOE_ENABLED=1, so the live flow is
+# unchanged until we've calibrated the threshold offline (via /reidentify).
+SEEN_SHOE_ENABLED  = os.getenv("SEEN_SHOE_ENABLED", "0") not in ("0", "false", "False")
+# CONSERVATIVE auto-accept policy, set by the 2026-06-24 offline calibration:
+# require the TOP-K nearest neighbours (cosine >= MIN_SIM) to AGREE on brand
+# (>= MIN_AGREE of them). Single-NN precision plateaus at ~86%; top-3 agreement
+# at 0.96 lifts it to ~91% (the precision/coverage knee). DINOv2 ranks
+# silhouette over identity, so the agreement vote — not a higher threshold or a
+# color guard (which didn't help) — is what buys precision.
+SEEN_SHOE_MIN_SIM  = float(os.getenv("SEEN_SHOE_MIN_SIM", "0.96"))
+SEEN_SHOE_TOP_K    = int(os.getenv("SEEN_SHOE_TOP_K", "3"))     # neighbours to consult
+SEEN_SHOE_MIN_AGREE = int(os.getenv("SEEN_SHOE_MIN_AGREE", "2"))  # must share the brand
+
 # --- FedEx Track (diagnostic lookup for no_row boxes on the Airtable Sync page) -
 # Resolve a scanned FedEx tracking number to shipment details (status, weight,
 # delivery, shipper). OAuth2 client-credentials. Sandbox base:

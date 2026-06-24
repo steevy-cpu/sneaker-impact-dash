@@ -175,6 +175,32 @@ def init_db():
             synced_at           TEXT
         );
 
+        -- ----------------------------------------------------------------
+        -- shoe_memory: the "seen-shoe" cache. One row per previously-resolved
+        -- shoe crop, keyed by its DINOv2 appearance embedding. Before paying
+        -- for a cloud call on an uncertain pair, the worker looks up the nearest
+        -- neighbour here; a confident match reuses that brand/model for free.
+        -- Embeddings are L2-normalized float32 packed as a BLOB (cosine = dot).
+        -- `embedder` stamps which model produced the vector so the cache can be
+        -- invalidated/rebuilt if the engine swaps embedders. Additive; populated
+        -- only from trusted labels (gold > silver), never low-confidence guesses.
+        -- ----------------------------------------------------------------
+        CREATE TABLE IF NOT EXISTS shoe_memory (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            embedding   BLOB    NOT NULL,           -- packed float32, L2-normalized
+            dim         INTEGER NOT NULL,
+            embedder    TEXT    NOT NULL,           -- e.g. 'dinov2:dinov2_vits14'
+            brand       TEXT,
+            model       TEXT,
+            color       TEXT,
+            source      TEXT    NOT NULL,           -- 'gold' | 'silver' | 'local' | 'cloud'
+            confidence  REAL,
+            source_ref  TEXT,                       -- provenance: pair id / label filename
+            n_seen      INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT    NOT NULL,
+            updated_at  TEXT
+        );
+
         -- Indexes for the most common query patterns
         CREATE INDEX IF NOT EXISTS idx_shoes_batch      ON shoes(batch_id);
         CREATE INDEX IF NOT EXISTS idx_shoes_timestamp  ON shoes(timestamp);
@@ -186,6 +212,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_pairs_table_photo    ON pairs(table_photo_id);
         CREATE INDEX IF NOT EXISTS idx_pairs_review         ON pairs(review_status);
         CREATE INDEX IF NOT EXISTS idx_outbox_status        ON airtable_outbox(status);
+        CREATE INDEX IF NOT EXISTS idx_shoe_memory_embedder ON shoe_memory(embedder);
+        CREATE INDEX IF NOT EXISTS idx_shoe_memory_brand    ON shoe_memory(brand);
     """)
 
     conn.commit()

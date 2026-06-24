@@ -16,8 +16,10 @@ from datetime import datetime, timedelta
 from backend.config import (ENGINE_ENABLED, ENGINE_JOB_TIMEOUT,
                             ENGINE_POLL_SECONDS, IMAGES_DIR,
                             PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN,
-                            LOCAL_COLOR_CONF_MIN)
+                            LOCAL_COLOR_CONF_MIN, SEEN_SHOE_ENABLED,
+                            SEEN_SHOE_MIN_SIM, SEEN_SHOE_TOP_K, SEEN_SHOE_MIN_AGREE)
 from backend.database import get_connection
+from backend.services import shoe_memory
 from backend.services.cloud_identify import cloud_enabled
 from backend.services.cloud_identify import identify as cloud_identify
 from backend.services.label_export import export_label
@@ -189,7 +191,37 @@ class EngineWorker:
                     _known(make, mk_c, LOCAL_CONF_MIN)
                     and _known(model, md_c, LOCAL_CONF_MIN)
                 )
-                if not local_good and img_file and cloud_enabled():
+
+                # TIER 0 — seen-shoe cache: before paying for a cloud call, look
+                # up this crop's appearance embedding against shoes we've already
+                # identified. Conservative auto-accept (top-K must agree on
+                # brand); a hit reuses the label for free and skips the cloud.
+                # Fail-safe + flag-gated: any error or miss just proceeds to cloud.
+                from_cache = False
+                emb = p.get("embedding")
+                emb_name = p.get("embedder")
+                if (not local_good) and SEEN_SHOE_ENABLED and emb and emb_name:
+                    try:
+                        hit = shoe_memory.lookup(
+                            conn, emb, embedder=emb_name, min_sim=SEEN_SHOE_MIN_SIM,
+                            top_k=SEEN_SHOE_TOP_K, min_agree=SEEN_SHOE_MIN_AGREE,
+                            normalize=False)
+                    except Exception as exc:           # noqa: BLE001 - never fail a job
+                        hit = None
+                        print(f"[worker] {tp_id} pair {idx}: cache lookup error: {exc}",
+                              flush=True)
+                    if hit and _known(hit.get("brand"), 1.0, 0.0):
+                        make, model = hit["brand"], hit.get("model")
+                        sim = float(hit.get("similarity") or SEEN_SHOE_MIN_SIM)
+                        mk_c = md_c = sim          # top-K-agree hit -> treat as confident
+                        source = f"cache:{hit.get('source')}:{sim}"
+                        sources = [source]
+                        p["make"], p["model"] = make, model
+                        from_cache = True
+                        print(f"[worker] {tp_id} pair {idx}: cache hit -> {make}/{model} "
+                              f"(sim {sim}, agree {hit.get('agree')}/{hit.get('k')})")
+
+                if not local_good and not from_cache and img_file and cloud_enabled():
                     cloud = cloud_identify(str(PAIRS_DIR / img_file))
                     if cloud:
                         # Color stays local; the cloud only supplies brand + model.
@@ -201,6 +233,20 @@ class EngineWorker:
                         p["make"], p["model"] = make, model
                         print(f"[worker] {tp_id} pair {idx}: cloud -> "
                               f"{make}/{model}")
+                        # WRITE-BACK: remember this paid answer so the next time
+                        # the same shoe appears it deflects for free (the cache
+                        # compounds). Only store real, usable labels.
+                        if (SEEN_SHOE_ENABLED and emb and emb_name
+                                and _known(make, 1.0, 0.0) and _known(model, 1.0, 0.0)):
+                            try:
+                                shoe_memory.add_entry(
+                                    conn, emb, embedder=emb_name, brand=make,
+                                    model=model, color=color, source="cloud",
+                                    confidence=mk_c, source_ref=f"{tp_id}_{idx}",
+                                    normalize=False)
+                            except Exception as exc:   # noqa: BLE001 - never fail a job
+                                print(f"[worker] cache write-back error: {exc}",
+                                      flush=True)
 
                 # Color is local-only; accept it above its own lower floor, else
                 # mark unknown (don't let a weak color guess into the data/name).
@@ -228,9 +274,12 @@ class EngineWorker:
                     approved += 1
                 # Save to label_data: auto-approved local pairs (as before) AND
                 # every cloud-predicted pair with a real brand+model (training data).
+                # A cache hit is NOT exported — it's a near-duplicate of a crop
+                # already in label_data, so re-adding it would inflate the set
+                # with non-independent copies.
                 has_label = (make and str(make).lower() != "unknown"
                              and model and str(model).lower() != "unknown")
-                if img_file and has_label and (confident or used_cloud):
+                if img_file and has_label and (confident or used_cloud) and not from_cache:
                     export_label(str(PAIRS_DIR / img_file),
                                  color=color, make=make, model=model,
                                  make_conf=mk_c, model_conf=md_c, color_conf=color_c,

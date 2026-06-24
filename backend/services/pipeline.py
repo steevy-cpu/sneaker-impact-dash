@@ -13,7 +13,7 @@ import tempfile
 from backend.config import (ENGINE_DIR, ENGINE_RUNNER, ENGINE_PYTHON,
                             ENGINE_SEGMENT_MODEL, ENGINE_OLLAMA_MODEL,
                             ENGINE_OLLAMA_URL, ENGINE_MODEL_TIMEOUT,
-                            ENGINE_JOB_TIMEOUT, PAIRS_DIR)
+                            ENGINE_JOB_TIMEOUT, PAIRS_DIR, SEEN_SHOE_ENABLED)
 
 
 class EngineError(RuntimeError):
@@ -43,6 +43,10 @@ def process_table_photo(tp_id: str, image_fs_path: str) -> list:
         "--ollama-url",   ENGINE_OLLAMA_URL,
         "--model-timeout", str(ENGINE_MODEL_TIMEOUT),
     ]
+    # Only ask the engine to emit per-pair embeddings when the seen-shoe cache
+    # is on — otherwise it's pure overhead the live pipeline shouldn't pay.
+    if SEEN_SHOE_ENABLED:
+        cmd.append("--emit-embedding")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=ENGINE_JOB_TIMEOUT)
