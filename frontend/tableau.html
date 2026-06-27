@@ -118,7 +118,15 @@
         <!-- DATASET -->
         <div class="tb-section">Dataset Composition</div>
         <div class="tb-grid">
-            <div class="tb-card"><div class="tb-card-title">Top Brands</div>
+            <div class="tb-card">
+                <div class="tb-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                    <span>Top Brands</span>
+                    <a href="/api/tableau/brands.csv" download
+                       title="Download all brands with their quantities as CSV"
+                       style="font-size:12px;font-weight:600;text-decoration:none;color:var(--primary,#6366f1);
+                              border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:3px 10px;white-space:nowrap;">
+                       ⬇ CSV</a>
+                </div>
                 <div class="tb-card-insight" id="ins-brands"></div>
                 <div class="tb-wrap tall"><canvas id="c-brands"></canvas></div></div>
             <div class="tb-card"><div class="tb-card-title">Top Models</div>

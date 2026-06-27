@@ -15,12 +15,15 @@ Design for the "must not slow/freeze the site" rule:
                                 ai{...}, pairing{...}, airtable{...},
                                 box{...}, timeline{...}, generated_at }
 """
+import csv
+import io
 import sqlite3
 import threading
 import time
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 
 from backend.database import get_db
 
@@ -221,3 +224,31 @@ def tableau_stats(conn: sqlite3.Connection = Depends(get_db)):
         _CACHE["data"] = data
         _CACHE["ts"] = time.time()
         return data
+
+
+@router.get("/brands.csv", summary="Download top-brand quantities as CSV")
+def brands_csv(conn: sqlite3.Connection = Depends(get_db)):
+    """
+    Streams every identified brand with its pair quantity as a CSV download,
+    sorted highest-first, with a TOTAL row. Same cheap GROUP BY the stats page
+    uses (case-insensitively merged via _merge_ci), so it's sub-millisecond and
+    runs in FastAPI's threadpool — no impact on the live event loop.
+    """
+    brands_raw = conn.execute(
+        "SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
+        "GROUP BY COALESCE(final_make, make)").fetchall()
+    brands = _merge_ci(brands_raw)          # [(label, count), ...] sorted desc
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["brand", "quantity"])
+    for label, count in brands:
+        writer.writerow([label, count])
+    writer.writerow(["TOTAL", sum(n for _, n in brands)])
+
+    filename = f"top_brands_{date.today().isoformat()}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
