@@ -107,6 +107,15 @@ def main():
 
         segmenter = build_segmenter(config)
         segs = segmenter.segment(image)
+        # Free the segmentation models (esp. SAM2 ~5GB under the escalation
+        # hybrid) off the GPU NOW, before the per-pair VLM model-ID loop. Left
+        # resident they overflow the 16GB GPU and evict the ollama model, making
+        # every model-ID call time out at MODEL_OLLAMA_TIMEOUT. No-op for the
+        # plain pipeline; segmentation is done, so the segmenter isn't reused.
+        try:
+            segmenter.release()
+        except Exception as exc:                       # noqa: BLE001 - fail safe
+            print(f"[engine] segmenter.release() failed: {exc}")
 
         min_frac = getattr(config, "SEGMENT_MIN_AREA_FRAC", 0.0)
         if min_frac > 0:
