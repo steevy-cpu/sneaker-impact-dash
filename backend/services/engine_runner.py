@@ -52,6 +52,13 @@ def main():
     ap.add_argument("--emit-embedding", action="store_true",
                     help="Emit a DINOv2 appearance embedding per pair (for the "
                          "dash seen-shoe cache). Off by default = no extra work.")
+    ap.add_argument("--escalate-sam2", action="store_true",
+                    help="Turn on the SAM2+gate escalation hybrid (YOLOE runs "
+                         "every time; SAM2+gate kicks in on weak results). Off "
+                         "by default = identical to the current pipeline.")
+    ap.add_argument("--escalate-mode", default=None,
+                    help="Escalation trigger: 'weak' (only weak YOLOE results) "
+                         "or 'always' (every photo). Default = engine config.")
     args = ap.parse_args()
 
     # Make the engine importable and run from its dir (so `import config`, the
@@ -79,6 +86,10 @@ def main():
             config.MODEL_OLLAMA_URL = args.ollama_url
         if args.model_timeout:
             config.MODEL_OLLAMA_TIMEOUT = args.model_timeout
+        if args.escalate_sam2:
+            config.SEGMENT_ESCALATE_SAM2 = True
+        if args.escalate_mode:
+            config.SEGMENT_ESCALATE_MODE = args.escalate_mode
 
         from segment_utils import build_segmenter
         from pair_utils import pair_shoes, pair_shoes_hybrid, pair_shoes_visual

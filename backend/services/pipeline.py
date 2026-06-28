@@ -13,7 +13,8 @@ import tempfile
 from backend.config import (ENGINE_DIR, ENGINE_RUNNER, ENGINE_PYTHON,
                             ENGINE_SEGMENT_MODEL, ENGINE_OLLAMA_MODEL,
                             ENGINE_OLLAMA_URL, ENGINE_MODEL_TIMEOUT,
-                            ENGINE_JOB_TIMEOUT, PAIRS_DIR, SEEN_SHOE_ENABLED)
+                            ENGINE_JOB_TIMEOUT, PAIRS_DIR, SEEN_SHOE_ENABLED,
+                            ENGINE_SEGMENT_ESCALATE, ENGINE_SEGMENT_ESCALATE_MODE)
 
 
 class EngineError(RuntimeError):
@@ -47,6 +48,9 @@ def process_table_photo(tp_id: str, image_fs_path: str) -> list:
     # is on — otherwise it's pure overhead the live pipeline shouldn't pay.
     if SEEN_SHOE_ENABLED:
         cmd.append("--emit-embedding")
+    # SAM2+gate escalation hybrid, opt-in via env (off = current pipeline).
+    if ENGINE_SEGMENT_ESCALATE:
+        cmd += ["--escalate-sam2", "--escalate-mode", ENGINE_SEGMENT_ESCALATE_MODE]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=ENGINE_JOB_TIMEOUT)

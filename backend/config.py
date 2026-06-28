@@ -65,6 +65,12 @@ ENGINE_PYTHON       = os.getenv("ENGINE_PYTHON", "/usr/bin/python3")
 # the hand-counted eval set vs 0.655 for 11s@0.25, at the same ~1.2s/photo
 # (tile batching absorbs the bigger model). See engine eval_tiling.py.
 ENGINE_SEGMENT_MODEL = os.getenv("ENGINE_SEGMENT_MODEL", "yoloe-11m-seg.pt")
+# SAM2+gate escalation hybrid (research 2026-06-27). OFF by default = the current
+# YOLOE pipeline, unchanged. Flip ENGINE_SEGMENT_ESCALATE=1 (and restart the dash
+# service) to turn it on; set it back to 0 to instantly revert. Mode "weak" only
+# escalates on weak YOLOE results; "always" runs SAM2+gate on every photo.
+ENGINE_SEGMENT_ESCALATE = os.getenv("ENGINE_SEGMENT_ESCALATE", "0") not in ("0", "false", "False", "")
+ENGINE_SEGMENT_ESCALATE_MODE = os.getenv("ENGINE_SEGMENT_ESCALATE_MODE", "weak")
 ENGINE_OLLAMA_MODEL = os.getenv("ENGINE_OLLAMA_MODEL", "qwen2.5vl:32b")
 ENGINE_OLLAMA_URL   = os.getenv("ENGINE_OLLAMA_URL", "http://localhost:11434")
 ENGINE_MODEL_TIMEOUT = int(os.getenv("ENGINE_MODEL_TIMEOUT", "240"))  # per-pair VLM call
@@ -137,6 +143,22 @@ SEEN_SHOE_MIN_AGREE = int(os.getenv("SEEN_SHOE_MIN_AGREE", "1"))  # must share t
 # the per-pair lookup stays fast as write-back accumulates over time.
 SEEN_SHOE_DEDUP_SIM = float(os.getenv("SEEN_SHOE_DEDUP_SIM", "0.985"))
 SEEN_SHOE_MAX_ROWS  = int(os.getenv("SEEN_SHOE_MAX_ROWS", "50000"))
+# Write-back CONFIDENCE GATE (anti-poisoning). A cached cloud answer is re-served
+# to every future look-alike, so one low-confidence/hallucinated label amplifies.
+# Two poisoning modes, two bars (live-data driven, 2026-06-27):
+#   * WRONG BRAND (cross-brand contamination) — gated by the BRAND bar. Brand conf
+#     is reliably high (79% of cloud pairs are >=0.90), so a 0.80 bar filters the
+#     ~13% riskiest brand calls while costing almost no deflection.
+#   * GARBAGE MODEL (fabricated strings like "FocusBreatheIn") — gated by the MODEL
+#     floor. Model conf is noisier; a modest 0.50 floor drops the clear guesses
+#     (~31% of cloud pairs sit below it) without nuking the compounding.
+# Requiring BOTH bars keeps ~67% of write-back vs only ~29% for a flat 0.80-both,
+# so deflection survives. (A *confident* hallucination still slips through — that
+# needs the gold-preferred tier / live precision meter, separate items.)
+SEEN_SHOE_WRITEBACK_CONF = float(os.getenv("SEEN_SHOE_WRITEBACK_CONF",
+                                           str(AUTO_APPROVE_CONF)))   # brand bar
+SEEN_SHOE_WRITEBACK_MODEL_CONF = float(os.getenv("SEEN_SHOE_WRITEBACK_MODEL_CONF",
+                                                 "0.50"))            # model floor
 
 # --- FedEx Track (diagnostic lookup for no_row boxes on the Airtable Sync page) -
 # Resolve a scanned FedEx tracking number to shipment details (status, weight,
