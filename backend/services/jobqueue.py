@@ -18,7 +18,9 @@ from backend.config import (ENGINE_ENABLED, ENGINE_JOB_TIMEOUT,
                             PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN,
                             LOCAL_COLOR_CONF_MIN, SEEN_SHOE_ENABLED,
                             SEEN_SHOE_MIN_SIM, SEEN_SHOE_TOP_K, SEEN_SHOE_MIN_AGREE,
-                            SEEN_SHOE_DEDUP_SIM, SEEN_SHOE_MAX_ROWS)
+                            SEEN_SHOE_DEDUP_SIM, SEEN_SHOE_MAX_ROWS,
+                            SEEN_SHOE_WRITEBACK_CONF,
+                            SEEN_SHOE_WRITEBACK_MODEL_CONF)
 from backend.database import get_connection
 from backend.services import shoe_memory
 from backend.services.cloud_identify import cloud_enabled
@@ -245,9 +247,15 @@ class EngineWorker:
                               f"{make}/{model}")
                         # WRITE-BACK: remember this paid answer so the next time
                         # the same shoe appears it deflects for free (the cache
-                        # compounds). Only store real, usable labels.
-                        if (SEEN_SHOE_ENABLED and emb and emb_name
-                                and _known(make, 1.0, 0.0) and _known(model, 1.0, 0.0)):
+                        # compounds). CONFIDENCE GATE (anti-poisoning): a cached
+                        # label is re-served to every future look-alike, so gate
+                        # the two failure modes separately — the BRAND must clear
+                        # the brand bar (stops wrong-brand contamination) and the
+                        # MODEL must clear its floor (stops garbage-model strings).
+                        writeback_ok = (
+                            _known(make, mk_c, SEEN_SHOE_WRITEBACK_CONF)
+                            and _known(model, md_c, SEEN_SHOE_WRITEBACK_MODEL_CONF))
+                        if SEEN_SHOE_ENABLED and emb and emb_name and writeback_ok:
                             try:
                                 shoe_memory.remember(
                                     conn, emb, embedder=emb_name, brand=make,
@@ -258,6 +266,13 @@ class EngineWorker:
                             except Exception as exc:   # noqa: BLE001 - never fail a job
                                 print(f"[worker] cache write-back error: {exc}",
                                       flush=True)
+                        elif SEEN_SHOE_ENABLED and emb and emb_name:
+                            # Skipped on purpose — keep it out of the cache so it
+                            # can't be re-served. Logged so the gate is observable.
+                            print(f"[worker] {tp_id} pair {idx}: write-back SKIPPED "
+                                  f"(brand {mk_c}<{SEEN_SHOE_WRITEBACK_CONF} or "
+                                  f"model {md_c}<{SEEN_SHOE_WRITEBACK_MODEL_CONF}) "
+                                  f"-> {make}/{model}", flush=True)
 
                 # Color is local-only; accept it above its own lower floor, else
                 # mark unknown (don't let a weak color guess into the data/name).

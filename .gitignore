@@ -72,3 +72,6 @@ certs/
 # SQLite WAL/SHM runtime sidecars (never commit)
 *.db-wal
 *.db-shm
+
+# Timestamped DB backups (e.g. sneakers.db.bak_pre_*_20260629_060324)
+sneakers.db.bak_*
