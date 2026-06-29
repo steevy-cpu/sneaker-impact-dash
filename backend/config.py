@@ -75,6 +75,10 @@ ENGINE_SEGMENT_ESCALATE_MODE = os.getenv("ENGINE_SEGMENT_ESCALATE_MODE", "weak")
 # cloud step overrides it on most pairs, so OFF (default) cuts ~1 min/photo and
 # frees the GPU during the engine phase. Set =1 to restore the local first-pass.
 ENGINE_LOCAL_MODEL_ID = os.getenv("ENGINE_LOCAL_MODEL_ID", "0") not in ("0", "false", "False", "")
+# Refine whitened-crop masks with SAM2 box-prompt (clean, tight masks vs loose
+# YOLOE detection masks). On by default; adds ~4-6s/photo. Set =0 to use the
+# detection masks (faster, looser crops).
+ENGINE_CROP_MASK_SAM2 = os.getenv("ENGINE_CROP_MASK_SAM2", "1") not in ("0", "false", "False", "")
 ENGINE_OLLAMA_MODEL = os.getenv("ENGINE_OLLAMA_MODEL", "qwen2.5vl:32b")
 ENGINE_OLLAMA_URL   = os.getenv("ENGINE_OLLAMA_URL", "http://localhost:11434")
 ENGINE_MODEL_TIMEOUT = int(os.getenv("ENGINE_MODEL_TIMEOUT", "240"))  # per-pair VLM call

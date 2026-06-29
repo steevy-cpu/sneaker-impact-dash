@@ -105,6 +105,9 @@ def main():
                          "(~3s/pair) and the dash cloud step overrides it on most "
                          "pairs anyway, so skipping it cuts ~1 min/photo. The "
                          "cloud (or seen-shoe cache) supplies the model instead.")
+    ap.add_argument("--no-crop-mask-sam2", action="store_true",
+                    help="Don't refine crop masks with SAM2 box-prompt; use the "
+                         "(looser) detection masks for whitening instead.")
     args = ap.parse_args()
 
     # Make the engine importable and run from its dir (so `import config`, the
@@ -136,6 +139,8 @@ def main():
             config.SEGMENT_ESCALATE_SAM2 = True
         if args.escalate_mode:
             config.SEGMENT_ESCALATE_MODE = args.escalate_mode
+        if args.no_crop_mask_sam2:
+            config.SEGMENT_CROP_MASK_SAM2 = False
 
         from segment_utils import build_segmenter
         from pair_utils import pair_shoes, pair_shoes_hybrid, pair_shoes_visual
@@ -204,6 +209,47 @@ def main():
                 )
             else:
                 segs = pair_shoes(segs, getattr(config, "SEGMENT_PAIR_MAX_GAP", 1.2))
+
+        # Clean crop masks via SAM2 box-prompt. Detection (YOLOE) is fast but its
+        # masks are loose, so a whitened crop still shows the table/neighbors.
+        # Here we ask SAM2 for ONE tight mask per final shoe box and swap it in
+        # for whitening — cheap (box-prompt, not everything-mode) and it makes
+        # crops clean on EVERY table, not just the ones that escalate. Gated +
+        # fail-safe: only runs when whitening is on, releases the GPU right after.
+        if (getattr(config, "SEGMENT_WHITEN_CROP", False)
+                and getattr(config, "SEGMENT_CROP_MASK_SAM2", False)):
+            try:
+                from segment_utils import Sam2BoxMasker, _resolve_device
+                masker = Sam2BoxMasker(
+                    getattr(config, "SEGMENT_ESCALATE_SAM_MODEL", "sam2_b.pt"),
+                    _resolve_device(),
+                    sam_max=getattr(config, "SEGMENT_ESCALATE_SAM_MAX", 1536))
+                if masker.ready:
+                    flat, refs = [], []     # refs: (seg_idx, member_idx or None)
+                    for si, sg in enumerate(segs):
+                        mboxes = getattr(sg, "member_boxes", None)
+                        if mboxes:
+                            for mi, mb in enumerate(mboxes):
+                                flat.append(mb); refs.append((si, mi))
+                        else:
+                            flat.append(sg.bbox); refs.append((si, None))
+                    polys = masker.mask_boxes(image, flat)
+                    refined = 0
+                    for (si, mi), poly in zip(refs, polys):
+                        if poly is None:
+                            continue
+                        sg = segs[si]
+                        if mi is None:
+                            sg.polygon = poly
+                        elif getattr(sg, "member_polys", None) and mi < len(sg.member_polys):
+                            sg.member_polys[mi] = poly
+                        refined += 1
+                    print(f"[engine] SAM2 box-masks refined {refined}/{len(flat)} "
+                          "shoe masks for clean crops")
+                masker.release()
+            except Exception as exc:                   # noqa: BLE001 - fail safe
+                print(f"[engine] crop-mask refine failed ({exc}); "
+                      "using detection masks.")
 
         brander = build_brand_classifier(config)
         # The local model-ID (ollama VLM, ~3s/pair) is optional: the dash cloud

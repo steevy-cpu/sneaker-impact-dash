@@ -15,7 +15,7 @@ from backend.config import (ENGINE_DIR, ENGINE_RUNNER, ENGINE_PYTHON,
                             ENGINE_OLLAMA_URL, ENGINE_MODEL_TIMEOUT,
                             ENGINE_JOB_TIMEOUT, PAIRS_DIR, SEEN_SHOE_ENABLED,
                             ENGINE_SEGMENT_ESCALATE, ENGINE_SEGMENT_ESCALATE_MODE,
-                            ENGINE_LOCAL_MODEL_ID)
+                            ENGINE_LOCAL_MODEL_ID, ENGINE_CROP_MASK_SAM2)
 
 
 class EngineError(RuntimeError):
@@ -55,6 +55,9 @@ def process_table_photo(tp_id: str, image_fs_path: str) -> list:
     # Skip the redundant local model-ID unless explicitly enabled (saves ~1 min).
     if not ENGINE_LOCAL_MODEL_ID:
         cmd.append("--skip-local-model-id")
+    # Refine crop masks with SAM2 box-prompt unless explicitly disabled.
+    if not ENGINE_CROP_MASK_SAM2:
+        cmd.append("--no-crop-mask-sam2")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=ENGINE_JOB_TIMEOUT)
