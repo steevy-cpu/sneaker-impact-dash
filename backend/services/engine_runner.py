@@ -100,6 +100,11 @@ def main():
     ap.add_argument("--escalate-mode", default=None,
                     help="Escalation trigger: 'weak' (only weak YOLOE results) "
                          "or 'always' (every photo). Default = engine config.")
+    ap.add_argument("--skip-local-model-id", action="store_true",
+                    help="Skip the per-pair LOCAL ollama model-ID. It's slow "
+                         "(~3s/pair) and the dash cloud step overrides it on most "
+                         "pairs anyway, so skipping it cuts ~1 min/photo. The "
+                         "cloud (or seen-shoe cache) supplies the model instead.")
     args = ap.parse_args()
 
     # Make the engine importable and run from its dir (so `import config`, the
@@ -201,7 +206,11 @@ def main():
                 segs = pair_shoes(segs, getattr(config, "SEGMENT_PAIR_MAX_GAP", 1.2))
 
         brander = build_brand_classifier(config)
-        modeler = build_model_identifier(config)
+        # The local model-ID (ollama VLM, ~3s/pair) is optional: the dash cloud
+        # step re-IDs most pairs and overrides it, so it's usually wasted work.
+        # Skip building it when asked -> model stays "unknown" and the cloud /
+        # seen-shoe cache fills it in. Brand (CLIP) is cheap, so it always runs.
+        modeler = None if args.skip_local_model_id else build_model_identifier(config)
         pad = getattr(config, "SEGMENT_CROP_PAD", 0.04)
         whiten = getattr(config, "SEGMENT_WHITEN_CROP", False)
         whiten_dilate = getattr(config, "SEGMENT_WHITEN_DILATE", 9)
@@ -238,10 +247,11 @@ def main():
             except Exception:                          # noqa: BLE001 - fail safe
                 pass
             model, model_conf, sources = ("unknown", None, [])
-            try:
-                model, model_conf, sources = modeler.identify(crop, make)
-            except Exception:                          # noqa: BLE001 - fail safe
-                pass
+            if modeler is not None:
+                try:
+                    model, model_conf, sources = modeler.identify(crop, make)
+                except Exception:                      # noqa: BLE001 - fail safe
+                    pass
 
             fname = f"{args.id_prefix}_{i}.jpg"
             cv2.imwrite(os.path.join(args.out_dir, fname), crop)

@@ -11,10 +11,11 @@ Single worker initially (models load once per subprocess; bounds GPU/VRAM use).
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 from backend.config import (ENGINE_ENABLED, ENGINE_JOB_TIMEOUT,
-                            ENGINE_POLL_SECONDS, IMAGES_DIR,
+                            ENGINE_POLL_SECONDS, IMAGES_DIR, CLOUD_CONCURRENCY,
                             PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN,
                             LOCAL_COLOR_CONF_MIN, SEEN_SHOE_ENABLED,
                             SEEN_SHOE_MIN_SIM, SEEN_SHOE_TOP_K, SEEN_SHOE_MIN_AGREE,
@@ -176,42 +177,44 @@ class EngineWorker:
             now = datetime.now().isoformat()
             approved = 0
             prepared = []
-            for idx, p in enumerate(pairs, 1):
-                # Heartbeat: the cloud phase can legitimately run long on a
-                # big photo (90s timeout x retries x pairs can exceed the
-                # stale sweeper's cutoff). Refreshing the claim per pair keeps
-                # the sweeper from re-queueing a job that is still alive —
-                # a single instant autocommit write, no transaction held.
-                conn.execute(
-                    "UPDATE table_photos SET claimed_at = ? WHERE id = ?",
-                    (datetime.now().isoformat(), tp_id),
-                )
-                conn.commit()
-                img_file = p.get("image_file")
-                img_url = f"/images/pairs/{img_file}" if img_file else None
-                color, color_c = p.get("detected_color"), p.get("color_confidence")
-                make, mk_c = p.get("make"), p.get("make_confidence")
-                model, md_c = p.get("model"), p.get("model_confidence")
-                sources = p.get("model_sources") or []
-                source = "local"
 
+            def _heartbeat():
+                # Refresh the claim so the stale sweeper doesn't re-queue a job
+                # that is still alive. A single instant autocommit write.
+                conn.execute("UPDATE table_photos SET claimed_at = ? WHERE id = ?",
+                             (datetime.now().isoformat(), tp_id))
+                conn.commit()
+
+            # ---- Pass A: resolve each pair locally + via the seen-shoe cache;
+            # collect the ones that still need a cloud call. No network here, so
+            # it's fast and stays sequential (cache lookups touch the DB). ----
+            states = []
+            for idx, p in enumerate(pairs, 1):
+                st = {
+                    "idx": idx, "p": p,
+                    "img_file": p.get("image_file"),
+                    "img_url": (f"/images/pairs/{p.get('image_file')}"
+                                if p.get("image_file") else None),
+                    "color": p.get("detected_color"),
+                    "color_c": p.get("color_confidence"),
+                    "make": p.get("make"), "mk_c": p.get("make_confidence"),
+                    "model": p.get("model"), "md_c": p.get("model_confidence"),
+                    "sources": p.get("model_sources") or [],
+                    "source": "local", "from_cache": False,
+                    "emb": p.get("embedding"), "emb_name": p.get("embedder"),
+                }
                 # HYBRID: keep the local prediction only if MAKE and MODEL are
                 # both confident (>= LOCAL_CONF_MIN) and not "unknown". Color is
                 # NOT part of this gate — it's always taken locally (below).
-                # Otherwise ask the cloud model for a better brand + model.
-                local_good = (
-                    _known(make, mk_c, LOCAL_CONF_MIN)
-                    and _known(model, md_c, LOCAL_CONF_MIN)
-                )
+                local_good = (_known(st["make"], st["mk_c"], LOCAL_CONF_MIN)
+                              and _known(st["model"], st["md_c"], LOCAL_CONF_MIN))
 
                 # TIER 0 — seen-shoe cache: before paying for a cloud call, look
                 # up this crop's appearance embedding against shoes we've already
                 # identified. Conservative auto-accept (top-K must agree on
                 # brand); a hit reuses the label for free and skips the cloud.
                 # Fail-safe + flag-gated: any error or miss just proceeds to cloud.
-                from_cache = False
-                emb = p.get("embedding")
-                emb_name = p.get("embedder")
+                emb, emb_name = st["emb"], st["emb_name"]
                 if (not local_good) and SEEN_SHOE_ENABLED and emb and emb_name:
                     try:
                         hit = shoe_memory.lookup(
@@ -223,57 +226,86 @@ class EngineWorker:
                         print(f"[worker] {tp_id} pair {idx}: cache lookup error: {exc}",
                               flush=True)
                     if hit and _known(hit.get("brand"), 1.0, 0.0):
-                        make, model = hit["brand"], hit.get("model")
+                        st["make"], st["model"] = hit["brand"], hit.get("model")
                         sim = float(hit.get("similarity") or SEEN_SHOE_MIN_SIM)
-                        mk_c = md_c = sim          # top-K-agree hit -> treat as confident
-                        source = f"cache:{hit.get('source')}:{sim}"
-                        sources = [source]
-                        p["make"], p["model"] = make, model
-                        from_cache = True
-                        print(f"[worker] {tp_id} pair {idx}: cache hit -> {make}/{model} "
-                              f"(sim {sim}, agree {hit.get('agree')}/{hit.get('k')})")
+                        st["mk_c"] = st["md_c"] = sim   # top-K-agree -> confident
+                        st["source"] = f"cache:{hit.get('source')}:{sim}"
+                        st["sources"] = [st["source"]]
+                        p["make"], p["model"] = st["make"], st["model"]
+                        st["from_cache"] = True
+                        print(f"[worker] {tp_id} pair {idx}: cache hit -> "
+                              f"{st['make']}/{st['model']} (sim {sim}, "
+                              f"agree {hit.get('agree')}/{hit.get('k')})")
 
-                if not local_good and not from_cache and img_file and cloud_enabled():
-                    cloud = cloud_identify(str(PAIRS_DIR / img_file))
-                    if cloud:
+                st["needs_cloud"] = bool(
+                    not local_good and not st["from_cache"]
+                    and st["img_file"] and cloud_enabled())
+                states.append(st)
+
+            # ---- Pass B: run the cloud identify calls CONCURRENTLY. They're
+            # network I/O (no local GPU), so this only cuts wall-clock — a
+            # 17-pair photo goes from ~3.5 min to ~1 min at 4-wide. The futures
+            # run cloud_identify only; every DB/cache write below stays on this
+            # one worker thread (so sqlite is never touched concurrently). ----
+            cloud_states = [st for st in states if st["needs_cloud"]]
+            if cloud_states:
+                _heartbeat()
+                workers = max(1, min(CLOUD_CONCURRENCY, len(cloud_states)))
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    futs = {ex.submit(cloud_identify,
+                                      str(PAIRS_DIR / st["img_file"])): st
+                            for st in cloud_states}
+                    for fut in as_completed(futs):
+                        st = futs[fut]
+                        idx = st["idx"]
+                        _heartbeat()                    # keep the claim fresh
+                        try:
+                            cloud = fut.result()
+                        except Exception as exc:        # noqa: BLE001 - never fail job
+                            cloud = None
+                            print(f"[worker] {tp_id} pair {idx}: cloud error: {exc}",
+                                  flush=True)
+                        if not cloud:
+                            continue
                         # Color stays local; the cloud only supplies brand + model.
-                        make,  mk_c  = cloud["brand"], cloud["brand_confidence"]
-                        model, md_c  = cloud["model"], cloud["model_confidence"]
-                        sources = [cloud["source"]]
-                        source = cloud["source"]
-                        # Reflect the cloud answer in the Airtable brand summary.
-                        p["make"], p["model"] = make, model
+                        st["make"], st["mk_c"] = cloud["brand"], cloud["brand_confidence"]
+                        st["model"], st["md_c"] = cloud["model"], cloud["model_confidence"]
+                        st["sources"] = [cloud["source"]]
+                        st["source"] = cloud["source"]
+                        st["p"]["make"], st["p"]["model"] = st["make"], st["model"]
                         print(f"[worker] {tp_id} pair {idx}: cloud -> "
-                              f"{make}/{model}")
-                        # WRITE-BACK: remember this paid answer so the next time
-                        # the same shoe appears it deflects for free (the cache
-                        # compounds). CONFIDENCE GATE (anti-poisoning): a cached
-                        # label is re-served to every future look-alike, so gate
-                        # the two failure modes separately — the BRAND must clear
-                        # the brand bar (stops wrong-brand contamination) and the
-                        # MODEL must clear its floor (stops garbage-model strings).
+                              f"{st['make']}/{st['model']}")
+                        # WRITE-BACK (anti-poisoning gate): a cached label is
+                        # re-served to every future look-alike, so the BRAND must
+                        # clear the brand bar and the MODEL its floor.
+                        emb, emb_name = st["emb"], st["emb_name"]
                         writeback_ok = (
-                            _known(make, mk_c, SEEN_SHOE_WRITEBACK_CONF)
-                            and _known(model, md_c, SEEN_SHOE_WRITEBACK_MODEL_CONF))
+                            _known(st["make"], st["mk_c"], SEEN_SHOE_WRITEBACK_CONF)
+                            and _known(st["model"], st["md_c"], SEEN_SHOE_WRITEBACK_MODEL_CONF))
                         if SEEN_SHOE_ENABLED and emb and emb_name and writeback_ok:
                             try:
                                 shoe_memory.remember(
-                                    conn, emb, embedder=emb_name, brand=make,
-                                    model=model, color=color, source="cloud",
-                                    confidence=mk_c, source_ref=f"{tp_id}_{idx}",
+                                    conn, emb, embedder=emb_name, brand=st["make"],
+                                    model=st["model"], color=st["color"], source="cloud",
+                                    confidence=st["mk_c"], source_ref=f"{tp_id}_{idx}",
                                     dedup_sim=SEEN_SHOE_DEDUP_SIM,
                                     max_rows=SEEN_SHOE_MAX_ROWS, normalize=False)
                             except Exception as exc:   # noqa: BLE001 - never fail a job
                                 print(f"[worker] cache write-back error: {exc}",
                                       flush=True)
                         elif SEEN_SHOE_ENABLED and emb and emb_name:
-                            # Skipped on purpose — keep it out of the cache so it
-                            # can't be re-served. Logged so the gate is observable.
                             print(f"[worker] {tp_id} pair {idx}: write-back SKIPPED "
-                                  f"(brand {mk_c}<{SEEN_SHOE_WRITEBACK_CONF} or "
-                                  f"model {md_c}<{SEEN_SHOE_WRITEBACK_MODEL_CONF}) "
-                                  f"-> {make}/{model}", flush=True)
+                                  f"(brand {st['mk_c']}<{SEEN_SHOE_WRITEBACK_CONF} or "
+                                  f"model {st['md_c']}<{SEEN_SHOE_WRITEBACK_MODEL_CONF}) "
+                                  f"-> {st['make']}/{st['model']}", flush=True)
 
+            # ---- Pass C: finalize each pair (color floor, auto-approve, label
+            # export) and build the rows for the single write transaction. ----
+            for st in states:
+                idx, p = st["idx"], st["p"]
+                color, color_c = st["color"], st["color_c"]
+                make, mk_c, model, md_c = st["make"], st["mk_c"], st["model"], st["md_c"]
+                source = st["source"]
                 # Color is local-only; accept it above its own lower floor, else
                 # mark unknown (don't let a weak color guess into the data/name).
                 if not _known(color, color_c, LOCAL_COLOR_CONF_MIN):
@@ -291,22 +323,22 @@ class EngineWorker:
                 final_model = model if confident else None
 
                 prepared.append(
-                    (tp_id, img_url, json.dumps(p.get("bbox")), p.get("pair_score"),
+                    (tp_id, st["img_url"], json.dumps(p.get("bbox")), p.get("pair_score"),
                      color, color_c, make, mk_c, model, md_c,
-                     json.dumps(sources),
+                     json.dumps(st["sources"]),
                      review_status, final_make, final_model, source, now),
                 )
                 if confident:
                     approved += 1
-                # Save to label_data: auto-approved local pairs (as before) AND
-                # every cloud-predicted pair with a real brand+model (training data).
+                # Save to label_data: auto-approved local pairs AND every
+                # cloud-predicted pair with a real brand+model (training data).
                 # A cache hit is NOT exported — it's a near-duplicate of a crop
-                # already in label_data, so re-adding it would inflate the set
-                # with non-independent copies.
+                # already in label_data.
                 has_label = (make and str(make).lower() != "unknown"
                              and model and str(model).lower() != "unknown")
-                if img_file and has_label and (confident or used_cloud) and not from_cache:
-                    export_label(str(PAIRS_DIR / img_file),
+                if (st["img_file"] and has_label and (confident or used_cloud)
+                        and not st["from_cache"]):
+                    export_label(str(PAIRS_DIR / st["img_file"]),
                                  color=color, make=make, model=model,
                                  make_conf=mk_c, model_conf=md_c, color_conf=color_c,
                                  source_photo=tp_id, source_pair=idx,

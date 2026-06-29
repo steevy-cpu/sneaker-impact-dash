@@ -71,6 +71,10 @@ ENGINE_SEGMENT_MODEL = os.getenv("ENGINE_SEGMENT_MODEL", "yoloe-11m-seg.pt")
 # escalates on weak YOLOE results; "always" runs SAM2+gate on every photo.
 ENGINE_SEGMENT_ESCALATE = os.getenv("ENGINE_SEGMENT_ESCALATE", "0") not in ("0", "false", "False", "")
 ENGINE_SEGMENT_ESCALATE_MODE = os.getenv("ENGINE_SEGMENT_ESCALATE_MODE", "weak")
+# Run the per-pair LOCAL ollama model-ID in the engine? It's ~3s/pair and the
+# cloud step overrides it on most pairs, so OFF (default) cuts ~1 min/photo and
+# frees the GPU during the engine phase. Set =1 to restore the local first-pass.
+ENGINE_LOCAL_MODEL_ID = os.getenv("ENGINE_LOCAL_MODEL_ID", "0") not in ("0", "false", "False", "")
 ENGINE_OLLAMA_MODEL = os.getenv("ENGINE_OLLAMA_MODEL", "qwen2.5vl:32b")
 ENGINE_OLLAMA_URL   = os.getenv("ENGINE_OLLAMA_URL", "http://localhost:11434")
 ENGINE_MODEL_TIMEOUT = int(os.getenv("ENGINE_MODEL_TIMEOUT", "240"))  # per-pair VLM call
@@ -98,6 +102,11 @@ LOCAL_CONF_MIN       = float(os.getenv("LOCAL_CONF_MIN", "0.80"))        # make+
 LOCAL_COLOR_CONF_MIN = float(os.getenv("LOCAL_COLOR_CONF_MIN", "0.50"))  # accept local color >= this
 CLOUD_BACKEND    = os.getenv("CLOUD_BACKEND", "gemini")        # "gemini" | "openai" | "none"
 CLOUD_TIMEOUT    = int(os.getenv("CLOUD_TIMEOUT", "90"))       # per-image cloud call (s).
+# How many cloud identify calls to run CONCURRENTLY per photo. The calls are
+# network I/O (no local GPU), so this only affects wall-clock, not site speed:
+# a 17-pair photo at ~12s/call drops from ~3.5 min to ~1 min at 4-wide. Bounded
+# to stay under provider rate limits; set 1 to restore sequential behavior.
+CLOUD_CONCURRENCY = max(1, int(os.getenv("CLOUD_CONCURRENCY", "4")))
 # 90s not 30: gemini-2.5-pro is a reasoning model and regularly thinks past 30s;
 # every timeout silently left that pair on its "unknown" local guess. Only the
 # background worker waits on this — no web request ever blocks on a cloud call.
