@@ -38,6 +38,42 @@ def _f(v):
     return float(v) if isinstance(v, (int, float)) else None
 
 
+def _whiten_bg(crop, seg, ox, oy, dilate):
+    """Return `crop` with everything outside the shoe mask(s) painted white.
+
+    `seg` carries either a single `.polygon` (a lone shoe) or, for a pair, its
+    two members' polygons on `.member_polys`. Polygons are in source-image
+    coords; shift them by (-ox, -oy) into crop space and fill. If no polygon is
+    available (e.g. a detector backend without masks), return the crop unchanged
+    so we never blank out a real shoe."""
+    import cv2
+    import numpy as np
+
+    polys = []
+    member_polys = getattr(seg, "member_polys", None)
+    if member_polys:                                   # a pair: one mask per shoe
+        polys = [p for p in member_polys if p is not None and len(p) >= 3]
+    elif getattr(seg, "polygon", None) is not None and len(seg.polygon) >= 3:
+        polys = [seg.polygon]                          # a single shoe
+    if not polys:
+        return crop                                    # nothing to mask -> as-is
+
+    h, w = crop.shape[:2]
+    mask = np.zeros((h, w), dtype=np.uint8)
+    for p in polys:
+        pts = np.asarray(p, dtype=np.float32).copy()
+        pts[:, 0] -= ox
+        pts[:, 1] -= oy
+        cv2.fillPoly(mask, [pts.astype(np.int32)], 255)
+    if dilate and dilate > 0:                          # grow a touch so we don't
+        k = cv2.getStructuringElement(                 # shave the shoe's edge
+            cv2.MORPH_ELLIPSE, (int(dilate), int(dilate)))
+        mask = cv2.dilate(mask, k)
+    out = np.full_like(crop, 255)
+    out[mask > 0] = crop[mask > 0]
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="Run the pipeline on one table photo.")
     ap.add_argument("--engine-dir", required=True, help="sneaker_impact_training dir")
@@ -143,6 +179,7 @@ def main():
                     max_gap_frac=getattr(config, "SEGMENT_PAIR_MAX_GAP", 1.2),
                     veto_min=getattr(config, "SEGMENT_PAIR_VETO_MIN", 0.25),
                     rescue_min=getattr(config, "SEGMENT_PAIR_RESCUE_MIN", 0.80),
+                    max_dist_frac=getattr(config, "SEGMENT_PAIR_MAX_DIST_FRAC", 0.20),
                     log=print,                          # stdout is redirected to stderr
                 )
             elif method == "visual":
@@ -152,6 +189,7 @@ def main():
                     image, segs, _get_embedder(),
                     spatial_weight=getattr(config, "SEGMENT_PAIR_SPATIAL_WEIGHT", 0.15),
                     min_sim=getattr(config, "SEGMENT_PAIR_MIN_SIM", 0.5),
+                    max_dist_frac=getattr(config, "SEGMENT_PAIR_MAX_DIST_FRAC", 0.20),
                     log=print,                          # stdout is redirected to stderr
                 )
             else:
@@ -160,6 +198,8 @@ def main():
         brander = build_brand_classifier(config)
         modeler = build_model_identifier(config)
         pad = getattr(config, "SEGMENT_CROP_PAD", 0.04)
+        whiten = getattr(config, "SEGMENT_WHITEN_CROP", False)
+        whiten_dilate = getattr(config, "SEGMENT_WHITEN_DILATE", 9)
         os.makedirs(args.out_dir, exist_ok=True)
 
         for i, seg in enumerate(segs, 1):
@@ -167,6 +207,17 @@ def main():
             if x2 <= x1 or y2 <= y1:
                 continue
             crop = image[y1:y2, x1:x2]
+
+            # Optional: white-out everything outside the shoe mask(s), so the
+            # saved crop shows ONLY the one/two shoes on a clean white background
+            # (the old-system look). Uses the segment's polygon (single) or both
+            # member polygons (pair). Fail-safe: any missing mask / error keeps
+            # the raw crop. A small dilation avoids shaving the shoe's edge.
+            if whiten:
+                try:
+                    crop = _whiten_bg(crop, seg, x1, y1, whiten_dilate)
+                except Exception as exc:               # noqa: BLE001 - fail safe
+                    print(f"[engine] whiten failed on pair {i}: {exc}")
 
             color, color_conf = ("unknown", None)
             if classify_color is not None:
