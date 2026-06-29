@@ -102,10 +102,18 @@ app.add_middleware(
 # so StaticFiles' ETag-only response lets browsers heuristically serve a
 # stale page — e.g. an old nav bar missing a newly added link. Force HTML
 # to always revalidate (304 when unchanged, fresh content when not).
+#
+# Pair crops have the SAME problem: a reprocess OVERWRITES the crop in place
+# (same filename TBL-..._N.jpg), so the browser keeps showing the old cached
+# image (e.g. before the background-whitening change). Force those to revalidate
+# too — StaticFiles still sends ETag/Last-Modified, so it's a cheap 304 when
+# unchanged and the fresh crop after a reprocess. Shoe images under /images are
+# write-once, so they stay fully cacheable (only /images/pairs/ is overwritten).
 @app.middleware("http")
 async def revalidate_html(request, call_next):
     response = await call_next(request)
-    if response.headers.get("content-type", "").startswith("text/html"):
+    if (response.headers.get("content-type", "").startswith("text/html")
+            or request.url.path.startswith("/images/pairs/")):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
