@@ -38,8 +38,10 @@ def _f(v):
     return float(v) if isinstance(v, (int, float)) else None
 
 
-def _whiten_bg(crop, seg, ox, oy, dilate, color=205):
-    """Return `crop` with everything outside the shoe mask(s) painted `color`.
+def _whiten_bg(crop, seg, ox, oy, dilate, color=205, tighten=True, margin=10):
+    """Return `crop` with everything outside the shoe mask(s) painted `color`,
+    then (when `tighten`) re-cropped to the mask's bounding box + `margin` px so
+    the shoes fill the frame instead of floating in a big gray border.
 
     `seg` carries either a single `.polygon` (a lone shoe) or, for a pair, its
     two members' polygons on `.member_polys`. Polygons are in source-image
@@ -50,7 +52,10 @@ def _whiten_bg(crop, seg, ox, oy, dilate, color=205):
     `color` is a neutral grayscale value for the background: pure white (255)
     makes WHITE shoes/laces dissolve into the background (lost silhouette), so the
     default is a mid-light gray (~205) that keeps white shoes' edges while still
-    isolating the shoe from the cluttered table."""
+    isolating the shoe from the cluttered table.
+
+    Tightening also drops any neighbor shoe that fell inside the loose union box:
+    it's masked to gray AND now usually outside the tight crop entirely."""
     import cv2
     import numpy as np
 
@@ -76,6 +81,14 @@ def _whiten_bg(crop, seg, ox, oy, dilate, color=205):
         mask = cv2.dilate(mask, k)
     out = np.full_like(crop, int(color))
     out[mask > 0] = crop[mask > 0]
+
+    if tighten:
+        ys, xs = np.where(mask > 0)
+        if len(xs):
+            m = int(margin)
+            x0, x1 = max(0, int(xs.min()) - m), min(w, int(xs.max()) + 1 + m)
+            y0, y1 = max(0, int(ys.min()) - m), min(h, int(ys.max()) + 1 + m)
+            out = out[y0:y1, x0:x1]
     return out
 
 
@@ -261,6 +274,8 @@ def main():
         whiten = getattr(config, "SEGMENT_WHITEN_CROP", False)
         whiten_dilate = getattr(config, "SEGMENT_WHITEN_DILATE", 9)
         whiten_color = getattr(config, "SEGMENT_WHITEN_COLOR", 205)
+        whiten_tighten = getattr(config, "SEGMENT_WHITEN_TIGHTEN", True)
+        whiten_margin = getattr(config, "SEGMENT_WHITEN_TIGHTEN_MARGIN", 10)
         os.makedirs(args.out_dir, exist_ok=True)
 
         for i, seg in enumerate(segs, 1):
@@ -277,7 +292,7 @@ def main():
             if whiten:
                 try:
                     crop = _whiten_bg(crop, seg, x1, y1, whiten_dilate,
-                                      whiten_color)
+                                      whiten_color, whiten_tighten, whiten_margin)
                 except Exception as exc:               # noqa: BLE001 - fail safe
                     print(f"[engine] whiten failed on pair {i}: {exc}")
 
