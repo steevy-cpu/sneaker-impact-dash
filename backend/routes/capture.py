@@ -13,6 +13,7 @@ segments it into `pairs` and fills color/brand/model. Endpoints:
   GET  /api/table-photos/{id}/status   lightweight status (for polling)
 """
 import json
+import math
 import sqlite3
 import threading
 from datetime import datetime
@@ -66,6 +67,28 @@ def table_photo_to_dict(row: sqlite3.Row) -> dict:
         "created_at":          row["created_at"],
         "processed_at":        row["processed_at"],
     }
+
+
+# A donation box is realistically a few-to-tens of lbs; cap generously at 150.
+# The station scale occasionally emits a garbage burst (e.g. 9.6e33) that, left
+# unguarded, poisons the box weight AND Airtable's "Weight (lbs)" field — which
+# in turn broke the "YTD total" email automation (Airtable summed a 34-digit
+# number). Drop any non-finite / non-positive / out-of-range reading to None so
+# garbage never reaches storage or Airtable.
+MAX_BOX_WEIGHT_LBS = 150.0
+
+
+def _clean_weight(weight):
+    """Return a sane box weight (lbs) or None for missing/garbage input."""
+    if weight is None:
+        return None
+    try:
+        w = float(weight)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(w) or w <= 0 or w > MAX_BOX_WEIGHT_LBS:
+        return None
+    return w
 
 
 def _has_box_data(good, eol, casuals, weight) -> bool:
@@ -125,8 +148,9 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
     """Create a `table_photos` record from box metadata + barcode ahead of (or
     without) the photo — mirrors ShoeSort's fast-track /api/metadata. A photo
     can be attached later via /api/capture. Shipment lookup is wired in P5."""
+    weight = _clean_weight(data.weight_of_box)
     if not _has_box_data(data.total_good_sneakers, data.total_end_of_life,
-                         data.casuals, data.weight_of_box):
+                         data.casuals, weight):
         raise HTTPException(
             status_code=422,
             detail="At least one box field (good / end-of-life / casuals / weight) must be > 0",
@@ -134,11 +158,11 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
     tp_id = generate_table_photo_id(conn)
     _insert_table_photo(
         conn, tp_id, operator_id=data.operator_id, batch_id=data.batch_id,
-        image_path=None, barcode=data.barcode, weight=data.weight_of_box,
+        image_path=None, barcode=data.barcode, weight=weight,
         good=data.total_good_sneakers, eol=data.total_end_of_life, casuals=data.casuals,
     )
     _attach_shipment(conn, tp_id, data.barcode)
-    _enqueue_outbox(conn, tp_id, data.barcode, {"weight": data.weight_of_box,
+    _enqueue_outbox(conn, tp_id, data.barcode, {"weight": weight,
                                                 "good": data.total_good_sneakers,
                                                 "eol": data.total_end_of_life,
                                                 "casuals": data.casuals})
@@ -161,6 +185,7 @@ async def capture(
     """Store one whole-table photo + box metadata as a `pending` table_photos
     row, ready for background processing (the worker arrives in P3). Validation:
     a readable image AND at least one box field > 0."""
+    weight_of_box = _clean_weight(weight_of_box)
     if not _has_box_data(total_good_sneakers, total_end_of_life, casuals, weight_of_box):
         raise HTTPException(
             status_code=422,
