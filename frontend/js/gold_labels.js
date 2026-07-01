@@ -47,6 +47,7 @@ async function load(page) {
     }
     GL.page = data.page; GL.total = data.total; GL.items = data.items;
     renderStats(data.stats);
+    loadReadiness();                                       // refresh readiness panel
 
     if (!data.items.length) {
         if (data.page > 1) return load(1);                 // page emptied → snap back
@@ -194,7 +195,41 @@ async function deleteGold() {
     } catch (err) { showToast(err.message || "Delete failed", "error", 2800); }
 }
 
+async function loadReadiness() {
+    let d;
+    try { d = await api.getGoldReadiness(15); } catch (_) { return; }
+    const card = $("gr-card");
+    if (!d || !d.total) { card.style.display = "none"; return; }
+    card.style.display = "block";
+    $("gr-kpis").innerHTML = [
+        [d.ready_brands, `Brands ready (≥${d.min_count})`],
+        [d.thin_brands, "Long-tail brands"],
+        [d.ml_accuracy + "%", "ML brand accuracy"],
+        [d.model_coverage.pct + "%", `Model coverage (${d.model_coverage.with_model})`],
+        [d.color_coverage.pct + "%", "Color coverage"],
+    ].map(([n, l]) => `<div class="gr-kpi"><div class="n">${n}</div><div class="l">${esc(l)}</div></div>`).join("");
+    const max = Math.max(1, ...d.brands.map(b => b.count));
+    $("gr-rows").innerHTML = d.brands.map(b => {
+        const acc = b.ml_accuracy == null ? "—" : b.ml_accuracy + "%";
+        const ac = b.ml_accuracy == null ? "#94a3b8"
+            : b.ml_accuracy >= 60 ? "#16a34a" : b.ml_accuracy >= 30 ? "#d97706" : "#dc2626";
+        const w = Math.round(100 * b.count / max);
+        return `<tr>
+            <td><b>${esc(b.brand)}</b></td>
+            <td>${b.count}</td>
+            <td><div class="gr-bar"><span style="width:${w}%;background:${b.ready ? "#10b981" : "#f59e0b"}"></span></div></td>
+            <td style="color:${ac};font-weight:700;">${acc}</td>
+            <td>${b.with_model}</td>
+            <td><span class="gr-ready ${b.ready ? "y" : "n"}">${b.ready ? "ready" : "+" + (d.min_count - b.count)}</span></td>
+        </tr>`;
+    }).join("");
+}
+
 buildEditChips();
+$("gr-toggle").addEventListener("click", () => {
+    const open = $("gr-body").classList.toggle("open");
+    $("gr-caret").textContent = open ? "▾ hide detail" : "▸ show detail";
+});
 $("gl-make").addEventListener("change", (e) => { GL.make = e.target.value; load(1); });
 $("gl-refresh").addEventListener("click", () => { GL.filledFilter = false; load(GL.page); });
 $("gl-zoom").addEventListener("click", () => $("gl-zoom").classList.remove("open"));

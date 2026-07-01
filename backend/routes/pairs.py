@@ -283,6 +283,62 @@ def gold_csv(conn: sqlite3.Connection = Depends(get_db)):
     )
 
 
+@router.get("/gold/readiness", summary="Gold-set training-readiness breakdown")
+def gold_readiness(min_count: int = Query(15, ge=1, le=1000),
+                   conn: sqlite3.Connection = Depends(get_db)):
+    """Training-readiness view over the gold set: per-canonical-brand counts +
+    ML accuracy (confirmed = ML brand was right, corrected = human overrode) +
+    human model coverage, so you can see which brands have enough gold (>=
+    min_count), which are the long tail, and where the classifier is weakest —
+    i.e. where to aim labeling. Cheap (233-ish rows), read-only, threadpool."""
+    rows = conn.execute(
+        f"SELECT final_make, final_model, final_color, label_action "
+        f"FROM pairs WHERE {GOLD_WHERE}").fetchall()
+    agg = {}                                   # canonical brand -> counters
+    tot = conf = corr = with_model = with_color = 0
+    for r in rows:
+        brand = canonical_brand(r["final_make"])
+        if not brand:
+            continue
+        e = agg.setdefault(brand, {"brand": brand, "count": 0, "confirmed": 0,
+                                   "corrected": 0, "with_model": 0})
+        e["count"] += 1
+        tot += 1
+        if r["label_action"] == "confirmed":
+            e["confirmed"] += 1; conf += 1
+        elif r["label_action"] == "corrected":
+            e["corrected"] += 1; corr += 1
+        has_model = bool(clean_model(r["final_model"], r["final_make"]))
+        if has_model:
+            e["with_model"] += 1; with_model += 1
+        if (r["final_color"] or "").strip().lower() not in ("", "unknown"):
+            with_color += 1
+
+    brands = sorted(agg.values(), key=lambda b: -b["count"])
+    for b in brands:
+        graded = b["confirmed"] + b["corrected"]
+        b["ml_accuracy"] = round(100.0 * b["confirmed"] / graded, 1) if graded else None
+        b["ready"] = b["count"] >= min_count
+    ready = [b for b in brands if b["ready"]]
+
+    def pctf(n, d):
+        return round(100.0 * n / d, 1) if d else 0.0
+
+    return {
+        "total": tot,
+        "distinct_brands": len(brands),
+        "min_count": min_count,
+        "ready_brands": len(ready),
+        "thin_brands": len(brands) - len(ready),
+        "ml_accuracy": pctf(conf, conf + corr),
+        "confirmed": conf,
+        "corrected": corr,
+        "model_coverage": {"with_model": with_model, "pct": pctf(with_model, tot)},
+        "color_coverage": {"with_color": with_color, "pct": pctf(with_color, tot)},
+        "brands": brands,
+    }
+
+
 @router.get("/{pair_id}", summary="Get a single pair")
 def get_pair(pair_id: str, conn: sqlite3.Connection = Depends(get_db)):
     row = conn.execute("SELECT * FROM pairs WHERE id = ?", (pair_id,)).fetchone()

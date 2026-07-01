@@ -51,6 +51,24 @@
       .gl-save { background:#10b981; color:#fff; } .gl-save:hover { background:#059669; }
       .gl-cancel { background:var(--bg,#f1f5f9); color:var(--text,#0f172a); border:1px solid var(--border,#cbd5e1)!important; }
       .gl-toreview { background:#fef3c7; color:#b45309; } .gl-del2 { background:#fee2e2; color:#b91c1c; margin-left:auto; }
+      /* training readiness panel */
+      .gr-card { border:1px solid var(--border); border-radius:var(--radius-lg,14px);
+        background:var(--card,#fff); padding:16px 20px; margin-bottom:18px; }
+      .gr-head { display:flex; align-items:center; gap:8px; cursor:pointer; }
+      .gr-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted,#64748b); }
+      .gr-kpis { display:flex; gap:20px; flex-wrap:wrap; margin:14px 0 4px; }
+      .gr-kpi .n { font-size:22px; font-weight:800; color:var(--text,#0f172a); line-height:1; }
+      .gr-kpi .l { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#64748b); margin-top:5px; }
+      .gr-body { margin-top:12px; display:none; }
+      .gr-body.open { display:block; }
+      .gr-tbl { width:100%; border-collapse:collapse; font-size:13px; }
+      .gr-tbl th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+        color:var(--text-muted,#64748b); font-weight:700; padding:6px 10px; border-bottom:1px solid var(--border,#e2e8f0); }
+      .gr-tbl td { padding:6px 10px; border-bottom:1px solid var(--border,#f1f5f9); }
+      .gr-bar { position:relative; height:8px; border-radius:5px; background:var(--bg,#f1f5f9); overflow:hidden; min-width:90px; }
+      .gr-bar > span { position:absolute; left:0; top:0; bottom:0; border-radius:5px; }
+      .gr-ready { display:inline-block; font-size:11px; font-weight:700; border-radius:999px; padding:2px 8px; }
+      .gr-ready.y { background:#dcfce7; color:#15803d; } .gr-ready.n { background:#fef3c7; color:#b45309; }
     </style>
 </head>
 <body>
@@ -111,6 +129,22 @@
             </div>
         </div>
 
+        <div class="gr-card" id="gr-card" style="display:none;">
+            <div class="gr-head" id="gr-toggle">
+                <span class="gr-title">🎓 Training readiness</span>
+                <span class="gr-title" id="gr-caret" style="margin-left:auto;">▸ show detail</span>
+            </div>
+            <div class="gr-kpis" id="gr-kpis"></div>
+            <div class="gr-body" id="gr-body">
+                <table class="gr-tbl">
+                    <thead><tr><th>Brand</th><th>Gold</th><th style="width:34%;">Class balance</th>
+                        <th>ML accuracy</th><th>Models</th><th></th></tr></thead>
+                    <tbody id="gr-rows"></tbody>
+                </table>
+                <div class="gl-was" style="margin-top:10px;">ML accuracy = how often the classifier's brand was already right (confirmed) vs needed a human fix (corrected), on this human-reviewed set. Low accuracy + high count = a brand worth more labeling.</div>
+            </div>
+        </div>
+
         <div id="gl-container"><div class="loading-state">Loading…</div></div>
         <div class="gl-pagination" id="gl-pagination" style="display:none;"></div>
     </main>
@@ -141,8 +175,8 @@
 </div>
 
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=19"></script>
+<script src="js/api.js?v=20"></script>
 <script src="js/utils.js"></script>
-<script src="js/gold_labels.js?v=3"></script>
+<script src="js/gold_labels.js?v=4"></script>
 </body>
 </html>

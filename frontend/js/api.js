@@ -154,6 +154,11 @@ const api = {
         return apiFetch(`/api/pairs/gold-queue?limit=${limit}`);
     },
 
+    /** Gold-set training-readiness breakdown (per-brand counts, ML accuracy). */
+    getGoldReadiness(minCount = 15) {
+        return apiFetch(`/api/pairs/gold/readiness?min_count=${minCount}`);
+    },
+
     /** Browse the human-verified gold labels (paginated + header stats). */
     getGoldLabels({ page = 1, page_size = 60, make = "" } = {}) {
         const q = new URLSearchParams({ page, page_size });
