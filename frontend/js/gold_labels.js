@@ -19,8 +19,11 @@ const BRAND_ALIAS = { asics: "ASICS", "new balance": "New Balance", newbalance: 
     "under armour": "Under Armour", underarmour: "Under Armour", "hoka one one": "Hoka",
     "on running": "On", onrunning: "On" };
 const COLORS = [["black","#111827"],["white","#e5e7eb"],["gray","#9ca3af"],
-    ["brown","#92400e"],["red","#ef4444"],["orange","#f97316"],["yellow","#eab308"],
-    ["green","#22c55e"],["blue","#3b82f6"],["purple","#a855f7"],["pink","#ec4899"],
+    ["brown","#92400e"],["beige","#d6c7a1"],["red","#ef4444"],["maroon","#7f1d1d"],
+    ["orange","#f97316"],["yellow","#eab308"],["gold","#d4af37"],["green","#22c55e"],
+    ["olive","#4d7c0f"],["teal","#14b8a6"],["blue","#3b82f6"],["navy","#1e3a8a"],
+    ["purple","#a855f7"],["pink","#ec4899"],["silver","#c0c0c0"],
+    ["multi","linear-gradient(135deg,#ef4444,#f59e0b,#22c55e,#3b82f6,#a855f7)"],
     ["unknown","#cbd5e1"]];
 function canonBrand(s) {
     const k = (s || "").trim().toLowerCase();

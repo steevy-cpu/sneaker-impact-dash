@@ -13,8 +13,10 @@ const PAL = ["#6366f1", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
 // Real-ish swatches for the color-distribution donut.
 const COLOR_HEX = {
     black:"#111827", white:"#e5e7eb", gray:"#9ca3af", grey:"#9ca3af",
-    brown:"#92400e", red:"#ef4444", orange:"#f97316", yellow:"#eab308",
-    green:"#22c55e", blue:"#3b82f6", purple:"#a855f7", pink:"#ec4899",
+    brown:"#92400e", beige:"#d6c7a1", red:"#ef4444", maroon:"#7f1d1d",
+    orange:"#f97316", yellow:"#eab308", gold:"#d4af37", green:"#22c55e",
+    olive:"#4d7c0f", teal:"#14b8a6", blue:"#3b82f6", navy:"#1e3a8a",
+    purple:"#a855f7", pink:"#ec4899", silver:"#c0c0c0",
     unknown:"#cbd5e1", multi:"#64748b",
 };
 const charts = [];
