@@ -37,6 +37,12 @@ _LOCK = threading.Lock()
 # (the data itself starts 2026-06-05, so no explicit floor is needed).
 _RANGES = ("today", "week", "30d", "90d", "all")
 
+# CO2e headline estimate. Calibrated to Airtable's existing per-box formula
+# ("total estimated CO2e kg per box" = weight_lbs * ~7.468, verified tightly
+# clustered 7.44-7.50 across live rows) so the dash headline agrees with what the
+# org already reports. It's a weight-based ESTIMATE — labeled as such in the UI.
+CO2E_KG_PER_LB = 7.46
+
 
 def _since_for(range_key):
     """ISO lower-bound for a range key, or None for 'all' (no floor). created_at
@@ -205,6 +211,25 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
            "total_weight": round(w[0], 1), "avg_weight": round(w[1], 1),
            "weighed_boxes": w[2]}
 
+    # ---- impact / ESG headline --------------------------------------------
+    # Operator-counted box composition is the defensible "shoes handled" figure;
+    # CO2e is a weight-based estimate (see CO2E_KG_PER_LB). All range-filtered.
+    good_ct, eol_ct, cas_ct = b[0], b[1], b[2]
+    shoes_ct = good_ct + eol_ct + cas_ct
+    total_wt = round(w[0], 1)
+    co2e_kg = total_wt * CO2E_KG_PER_LB
+    impact = {
+        "shoes_diverted": shoes_ct,
+        "reused": good_ct,
+        "recycled": eol_ct,
+        "casual": cas_ct,
+        "reuse_rate": round(100.0 * good_ct / shoes_ct, 1) if shoes_ct else 0.0,
+        "weight_lbs": total_wt,
+        "weighed_boxes": w[2],
+        "co2e_kg": round(co2e_kg),
+        "co2e_tonnes": round(co2e_kg / 1000.0, 1),
+    }
+
     # ---- timeline (daily, spanning the selected range, zero-filled) -------
     # Start at the range floor; for 'all' start at the first photo (system
     # launch). Cap the drawn span so the chart stays readable.
@@ -248,6 +273,7 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
         "pairing": pairing,
         "airtable": airtable,
         "box": box,
+        "impact": impact,
         "timeline": timeline,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }

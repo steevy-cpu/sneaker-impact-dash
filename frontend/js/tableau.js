@@ -77,6 +77,17 @@ function donut(canvasId, labels, data, colors) {
 function pct(part, whole) { return whole ? Math.round(100 * part / whole) : 0; }
 
 function render(d) {
+    // ---- Impact / ESG headline ----
+    const im = d.impact || {};
+    setText("im-shoes", n(im.shoes_diverted));
+    setText("im-shoes-sub", `${n(im.reused)} reused · ${n(im.recycled)} recycled · ${n(im.casual)} casual`);
+    setText("im-reused", n(im.reused));
+    setText("im-reused-sub", `${im.reuse_rate || 0}% reuse rate`);
+    setText("im-weight", n(im.weight_lbs) + " lb");
+    setText("im-weight-sub", `across ${n(im.weighed_boxes)} weighed boxes`);
+    setText("im-co2e", (im.co2e_tonnes >= 1 ? im.co2e_tonnes + " t" : n(im.co2e_kg) + " kg"));
+    setText("im-co2e-sub", "≈ " + n(im.co2e_kg) + " kg CO₂e · estimated");
+
     // ---- KPIs ----
     const k = d.kpis;
     setText("kpi-photos", n(k.table_photos));

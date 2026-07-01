@@ -43,6 +43,18 @@
       .tb-range:hover { color:var(--text,#0f172a); }
       .tb-range.active { background:linear-gradient(180deg,#6366f1,#06b6d4); color:#fff;
                 box-shadow:0 1px 2px rgba(0,0,0,.12); }
+      .impact-hero { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+                gap:16px; margin:22px 0 6px; }
+      .impact-card { position:relative; overflow:hidden; border-radius:16px; padding:22px 24px;
+                color:#fff; background:linear-gradient(135deg,#059669,#10b981);
+                box-shadow:0 6px 18px rgba(16,185,129,.28); }
+      .impact-card.blue  { background:linear-gradient(135deg,#4f46e5,#6366f1); box-shadow:0 6px 18px rgba(99,102,241,.28); }
+      .impact-card.teal  { background:linear-gradient(135deg,#0891b2,#06b6d4); box-shadow:0 6px 18px rgba(6,182,212,.28); }
+      .impact-card.amber { background:linear-gradient(135deg,#d97706,#f59e0b); box-shadow:0 6px 18px rgba(245,158,11,.28); }
+      .impact-card svg { position:absolute; right:-8px; top:-8px; width:78px; height:78px; opacity:.16; }
+      .impact-val { font-size:34px; font-weight:800; line-height:1; letter-spacing:-.02em; }
+      .impact-lbl { font-size:12px; font-weight:700; margin-top:9px; text-transform:uppercase; letter-spacing:.04em; opacity:.96; }
+      .impact-sub { font-size:12px; margin-top:6px; opacity:.85; }
     </style>
 </head>
 <body>
@@ -119,6 +131,34 @@
         </div>
 
         <div id="tb-error" class="error-state" style="display:none;"></div>
+
+        <!-- Impact / ESG headline -->
+        <section class="impact-hero" id="impact-hero" aria-label="Environmental impact">
+            <div class="impact-card">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>
+                <div class="impact-val" id="im-shoes">–</div>
+                <div class="impact-lbl">Shoes diverted from landfill</div>
+                <div class="impact-sub" id="im-shoes-sub"></div>
+            </div>
+            <div class="impact-card blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                <div class="impact-val" id="im-reused">–</div>
+                <div class="impact-lbl">Given a second life</div>
+                <div class="impact-sub" id="im-reused-sub"></div>
+            </div>
+            <div class="impact-card teal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a3 3 0 0 0-3 3c0 1.6 3 5 3 5s3-3.4 3-5a3 3 0 0 0-3-3Z"/><rect width="18" height="8" x="3" y="13" rx="2"/></svg>
+                <div class="impact-val" id="im-weight">–</div>
+                <div class="impact-lbl">Weight processed</div>
+                <div class="impact-sub" id="im-weight-sub"></div>
+            </div>
+            <div class="impact-card amber">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 15.3"/></svg>
+                <div class="impact-val" id="im-co2e">–</div>
+                <div class="impact-lbl">Est. CO₂e diverted</div>
+                <div class="impact-sub" id="im-co2e-sub"></div>
+            </div>
+        </section>
 
         <!-- KPI strip -->
         <div class="tb-kpis" id="tb-kpis">
@@ -206,6 +246,6 @@
 <script src="js/icons.js"></script>
 <script src="js/api.js?v=17"></script>
 <script src="js/utils.js"></script>
-<script src="js/tableau.js?v=2"></script>
+<script src="js/tableau.js?v=3"></script>
 </body>
 </html>
