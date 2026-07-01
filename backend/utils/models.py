@@ -27,6 +27,38 @@ def model_key(name):
     return _NONALNUM.sub(" ", name.lower()).strip()
 
 
+def strip_brand_prefix(model, prefixes):
+    """Remove a leading brand name (any of `prefixes`) from a model string.
+    Case-insensitive, word-boundary (must be followed by space or hyphen), longest
+    match wins. Returns '' when the model is ONLY the brand ('Hoka One One' -> '',
+    i.e. brand-as-model with no real model). Non-matching input is returned as-is."""
+    if not model:
+        return ""
+    m = model.strip()
+    ml = m.lower()
+    best = 0
+    for p in prefixes:
+        p = (p or "").strip().lower()
+        if not p:
+            continue
+        if ml == p:                            # model is just the brand -> no model
+            return ""
+        if (ml.startswith(p + " ") or ml.startswith(p + "-")) and len(p) > best:
+            best = len(p)
+    if not best:
+        return m
+    return m[best:].lstrip(" -").strip()       # len matches (ASCII, case-only diff)
+
+
+def clean_model(model, make):
+    """Brand-aware model cleanup: strip the model's OWN brand prefix.
+    'Hoka One One Clifton'(make Hoka) -> 'Clifton'; 'New Balance 990v5' -> '990v5';
+    'Hoka One One' -> '' (brand-as-model). Imported lazily to avoid any import
+    cycle with brands."""
+    from backend.utils.brands import brand_prefixes
+    return strip_brand_prefix(model, brand_prefixes(make))
+
+
 def merge_model_counts(rows):
     """Merge (label, count) rows by normalized model, skipping unknown/empty.
     Keeps the most common original spelling as the display label. Sorted desc."""

@@ -77,3 +77,19 @@ def variants_for(name, known_makes):
     target = norm_key(canonical_brand(name) or name)
     return [m for m in known_makes
             if norm_key(canonical_brand(m) or m) == target]
+
+
+def brand_prefixes(make):
+    """All brand-name strings worth stripping from a model of this make: the raw
+    make, its canonical form, and every alias that maps to that canonical (so
+    'Hoka One One Clifton' loses the full 'Hoka One One', not just 'Hoka'). Used
+    for brand-aware model cleanup — we only strip a model's OWN brand."""
+    out = set()
+    m = (make or "").strip()
+    if m:
+        out.add(m)
+    canon = canonical_brand(make)
+    if canon:
+        out.add(canon)
+        out.update(k for k, v in CANONICAL_BRANDS.items() if v == canon)
+    return {p for p in out if p}

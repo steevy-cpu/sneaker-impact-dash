@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 from backend.database import get_db
 from backend.utils.brands import (canonical_brand, merge_brand_counts,
                                   norm_key, variants_for)
-from backend.utils.models import merge_model_counts
+from backend.utils.models import merge_model_counts, clean_model
 
 router = APIRouter(prefix="/api/tableau", tags=["Tableau"])
 
@@ -117,9 +117,12 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
     brands_raw = cur(f"SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
                      f"WHERE {pw} GROUP BY COALESCE(final_make, make)", P).fetchall()
     brands = merge_brand_counts(brands_raw)     # canonical: ASICS/Asics -> one
-    models_raw = cur(f"SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
-                     f"WHERE {pw} GROUP BY COALESCE(final_model, model)", P).fetchall()
-    models = merge_model_counts(models_raw)     # case+punct merge of spellings
+    # Group by (make, model) so we can strip each model's OWN brand prefix
+    # ('Hoka One One Clifton' -> 'Clifton') before the case+punct merge.
+    mm_raw = cur(f"SELECT COALESCE(final_make, make), COALESCE(final_model, model), "
+                 f"COUNT(*) FROM pairs WHERE {pw} GROUP BY 1, 2", P).fetchall()
+    models = merge_model_counts(
+        (clean_model(model, make), cnt) for make, model, cnt in mm_raw)
 
     colors = [(c, n) for c, n in cur(
         f"SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
@@ -347,7 +350,10 @@ def _brand_data(conn, name, rng):
     models_raw = conn.execute(
         f"SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
         f"WHERE {where} GROUP BY COALESCE(final_model, model)", params).fetchall()
-    models = merge_model_counts(models_raw)      # case+punct merge of spellings
+    # All rows are this one brand, so strip its prefix ('Hoka One One Clifton'
+    # -> 'Clifton') before the case+punct merge.
+    models = merge_model_counts(
+        (clean_model(m, canon), n) for m, n in models_raw)
     colors = [(c, n) for c, n in conn.execute(
         f"SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
         f"IS NOT NULL AND {where} GROUP BY detected_color "
