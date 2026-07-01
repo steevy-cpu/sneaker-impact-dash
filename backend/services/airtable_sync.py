@@ -174,11 +174,14 @@ def sync_enabled():
 
 
 def brand_summary_from_pairs(pairs):
-    """Aggregate makes into 'Nike: 3, Adidas: 2' (skips unknown), most-common first."""
+    """Aggregate makes into 'Nike: 3, Adidas: 2' (skips unknown), most-common
+    first. Brands are canonicalized so case/alias variants (ASICS vs Asics) merge
+    into one entry instead of 'ASICS: 2, Asics: 2'."""
+    from backend.utils.brands import canonical_brand
     counts = {}
     for p in pairs:
-        mk = (p.get("final_make") or p.get("make") or "").strip()
-        if mk and mk.lower() != "unknown":
+        mk = canonical_brand(p.get("final_make") or p.get("make"))
+        if mk:
             counts[mk] = counts.get(mk, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     return ", ".join(f"{k}: {v}" for k, v in ordered)

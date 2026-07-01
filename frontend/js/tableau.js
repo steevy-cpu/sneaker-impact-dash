@@ -104,6 +104,7 @@ function render(d) {
     hbar("c-brands", bl, bc);
     if (bl.length) insight("ins-brands",
         `<b>${bl[0]}</b> leads with <b>${n(bc[0])}</b> pairs (${pct(bc[0], bTot)}% of identified) · ${d.brands.length} brands shown`);
+    populateBrandList(d.brands);
 
     // ---- Models ----
     const ml = d.models.map(m => m.label), mc = d.models.map(m => m.count);
@@ -197,6 +198,92 @@ function render(d) {
     setText("tb-foot", "Generated " + (d.generated_at || "").replace("T", " ") + " · auto-cached 60s");
 }
 
+// ---- Brand explorer --------------------------------------------------------
+const brandCharts = [];
+let currentBrand = null;
+
+function destroyBrandCharts() {
+    brandCharts.forEach((c) => { try { c.destroy(); } catch (_) {} });
+    brandCharts.length = 0;
+}
+
+function populateBrandList(brands) {
+    const dl = document.getElementById("be-list");
+    if (!dl || !brands) return;
+    dl.innerHTML = brands.map((b) => `<option value="${b.label}"></option>`).join("");
+}
+
+function renderBrand(d) {
+    destroyBrandCharts();
+    document.getElementById("be-results").style.display = "block";
+    const sp = d.spellings && d.spellings.length > 1
+        ? ` · merged: ${d.spellings.join(" + ")}` : "";
+    insight("be-head", `${d.brand} <span>· ${n(d.pairs)} pairs · ${d.models.length} models${sp}</span>`);
+
+    // Top models (horizontal bar)
+    const ml = d.models.map((m) => m.label), mc = d.models.map((m) => m.count);
+    const canvas = document.getElementById("be-models");
+    const emptyEl = document.getElementById("be-models-empty");
+    if (ml.length) {
+        emptyEl.style.display = "none"; canvas.style.display = "";
+        brandCharts.push(new Chart(canvas.getContext("2d"), {
+            type: "bar",
+            data: { labels: ml, datasets: [{ data: mc, borderWidth: 0, borderRadius: 5,
+                backgroundColor: ml.map((l, i) => PAL[i % PAL.length]) }] },
+            options: { responsive: true, maintainAspectRatio: false, indexAxis: "y",
+                animation: { duration: 400 },
+                plugins: { legend: { display: false } },
+                scales: { x: { beginAtZero: true, grid: { display: false } },
+                          y: { grid: { display: false } } } },
+        }));
+    } else {
+        canvas.style.display = "none"; emptyEl.style.display = "block";
+    }
+
+    // Color palette (swatches)
+    const cont = document.getElementById("be-colors");
+    const cTot = d.colors.reduce((a, c) => a + c.count, 0);
+    cont.innerHTML = d.colors.length ? d.colors.map((c) => {
+        const hex = COLOR_HEX[(c.label || "").toLowerCase()] || "#cbd5e1";
+        return `<span class="be-swatch"><span class="be-dot" style="background:${hex}"></span>${c.label} · ${pct(c.count, cTot)}%</span>`;
+    }).join("") : `<span class="be-muted">No color data.</span>`;
+}
+
+async function searchBrand(name) {
+    name = (name || "").trim();
+    if (!name) return;
+    currentBrand = name;
+    const msg = document.getElementById("be-msg");
+    const dl = document.getElementById("be-dl");
+    msg.style.display = "none";
+    try {
+        const d = await api.getBrandDetail(name, currentRange);
+        if (!d.pairs) {
+            document.getElementById("be-results").style.display = "none";
+            dl.disabled = true;
+            msg.style.display = "block";
+            msg.textContent = `No data for “${d.brand || name}” ${RANGE_LABEL[currentRange] || "in this range"}.`;
+            return;
+        }
+        renderBrand(d);
+        dl.disabled = false;
+        dl.onclick = () => { window.location = api.brandCsvUrl(d.brand, currentRange); };
+    } catch (e) {
+        document.getElementById("be-results").style.display = "none";
+        msg.style.display = "block";
+        msg.textContent = "Could not load brand: " + e.message;
+    }
+}
+
+function initBrandExplorer() {
+    const go = document.getElementById("be-go"), inp = document.getElementById("be-input");
+    if (!go || !inp) return;
+    go.addEventListener("click", () => searchBrand(inp.value));
+    inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); searchBrand(inp.value); }
+    });
+}
+
 // Chart.js reuses <canvas> elements, so every chart from the previous window
 // must be torn down before we re-render, or it throws "Canvas already in use".
 function destroyCharts() {
@@ -212,6 +299,7 @@ async function load(range) {
         const data = await api.getTableauStats(currentRange);
         destroyCharts();
         render(data);
+        if (currentBrand) searchBrand(currentBrand);   // re-scope open brand to range
     } catch (e) {
         err.style.display = "block";
         err.textContent = "Could not load visualizations: " + e.message;
@@ -230,4 +318,6 @@ function initRanges() {
     });
 }
 
-document.addEventListener("DOMContentLoaded", () => { initRanges(); load("all"); });
+document.addEventListener("DOMContentLoaded", () => {
+    initRanges(); initBrandExplorer(); load("all");
+});

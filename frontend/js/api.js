@@ -136,6 +136,19 @@ const api = {
         return apiFetch("/api/tableau/stats" + q);
     },
 
+    /** One brand's top models + color palette for a time window. */
+    getBrandDetail(name, range) {
+        const q = "?name=" + encodeURIComponent(name) +
+                  (range && range !== "all" ? "&range=" + encodeURIComponent(range) : "");
+        return apiFetch("/api/tableau/brand" + q);
+    },
+
+    /** Download URL for one brand's models + palette CSV. */
+    brandCsvUrl(name, range) {
+        return "/api/tableau/brand.csv?name=" + encodeURIComponent(name) +
+               (range && range !== "all" ? "&range=" + encodeURIComponent(range) : "");
+    },
+
     /** Next batch of PENDING pairs ordered for gold-label value (Quick Label). */
     getGoldQueue(limit = 20) {
         return apiFetch(`/api/pairs/gold-queue?limit=${limit}`);

@@ -55,6 +55,28 @@
       .impact-val { font-size:34px; font-weight:800; line-height:1; letter-spacing:-.02em; }
       .impact-lbl { font-size:12px; font-weight:700; margin-top:9px; text-transform:uppercase; letter-spacing:.04em; opacity:.96; }
       .impact-sub { font-size:12px; margin-top:6px; opacity:.85; }
+      .be-bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+      .be-input { flex:1; min-width:220px; padding:10px 13px; font-size:14px;
+                border:1px solid var(--border,#e2e8f0); border-radius:10px;
+                background:var(--card,#fff); color:var(--text,#0f172a); }
+      .be-btn { appearance:none; border:0; cursor:pointer; font-size:13px; font-weight:600;
+                padding:10px 16px; border-radius:10px; color:#fff;
+                background:linear-gradient(180deg,#6366f1,#06b6d4); }
+      .be-btn.ghost { background:transparent; color:var(--text-muted,#64748b);
+                border:1px solid var(--border,#e2e8f0); }
+      .be-btn.ghost[disabled] { opacity:.45; cursor:not-allowed; }
+      .be-results { margin-top:16px; }
+      .be-head { font-size:20px; font-weight:800; color:var(--text,#0f172a); }
+      .be-head span { font-size:13px; font-weight:600; color:var(--text-muted,#64748b); }
+      .be-cols { display:grid; grid-template-columns:1.3fr 1fr; gap:18px; margin-top:12px; }
+      @media (max-width:720px){ .be-cols{ grid-template-columns:1fr; } }
+      .be-sub { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+                color:var(--text-muted,#64748b); margin-bottom:8px; }
+      .be-swatches { display:flex; flex-wrap:wrap; gap:8px; }
+      .be-swatch { display:flex; align-items:center; gap:7px; font-size:12px;
+                border:1px solid var(--border,#e2e8f0); border-radius:20px; padding:4px 11px 4px 5px; }
+      .be-dot { width:15px; height:15px; border-radius:50%; border:1px solid rgba(0,0,0,.12); }
+      .be-muted { font-size:12px; color:var(--text-muted,#64748b); }
     </style>
 </head>
 <body>
@@ -171,6 +193,33 @@
             <div class="tb-kpi"><div class="tb-kpi-val" id="kpi-sync">—</div><div class="tb-kpi-lbl">Airtable Synced</div></div>
         </div>
 
+        <!-- BRAND EXPLORER -->
+        <div class="tb-section">Brand Explorer</div>
+        <div class="tb-card wide">
+            <div class="tb-card-insight">Search any brand to see its top models and color palette for the selected time range — then download the data.</div>
+            <div class="be-bar">
+                <input class="be-input" id="be-input" list="be-list" placeholder="Search a brand… e.g. ASICS, Hoka, Nike" autocomplete="off" aria-label="Search brand">
+                <datalist id="be-list"></datalist>
+                <button class="be-btn" id="be-go">Search</button>
+                <button class="be-btn ghost" id="be-dl" disabled>⬇ Download CSV</button>
+            </div>
+            <div class="be-results" id="be-results" style="display:none;">
+                <div class="be-head" id="be-head"></div>
+                <div class="be-cols">
+                    <div>
+                        <div class="be-sub">Top models</div>
+                        <div class="tb-wrap tall"><canvas id="be-models"></canvas></div>
+                        <div class="be-muted" id="be-models-empty" style="display:none;">No identified models for this brand in range.</div>
+                    </div>
+                    <div>
+                        <div class="be-sub">Color palette</div>
+                        <div class="be-swatches" id="be-colors"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="be-muted" id="be-msg" style="display:none;"></div>
+        </div>
+
         <!-- DATASET -->
         <div class="tb-section">Dataset Composition</div>
         <div class="tb-grid">
@@ -244,8 +293,8 @@
 </div><!-- /.layout -->
 
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=17"></script>
+<script src="js/api.js?v=18"></script>
 <script src="js/utils.js"></script>
-<script src="js/tableau.js?v=3"></script>
+<script src="js/tableau.js?v=4"></script>
 </body>
 </html>

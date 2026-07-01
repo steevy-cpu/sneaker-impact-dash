@@ -26,6 +26,8 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from backend.database import get_db
+from backend.utils.brands import (canonical_brand, merge_brand_counts,
+                                  norm_key, variants_for)
 
 router = APIRouter(prefix="/api/tableau", tags=["Tableau"])
 
@@ -129,7 +131,7 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
 
     brands_raw = cur(f"SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
                      f"WHERE {pw} GROUP BY COALESCE(final_make, make)", P).fetchall()
-    brands = _merge_ci(brands_raw)
+    brands = merge_brand_counts(brands_raw)     # canonical: ASICS/Asics -> one
     models_raw = cur(f"SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
                      f"WHERE {pw} GROUP BY COALESCE(final_model, model)", P).fetchall()
     models = _merge_ci(models_raw)
@@ -312,7 +314,7 @@ def brands_csv(range: str = "all", conn: sqlite3.Connection = Depends(get_db)):
         f"SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
         f"WHERE {pw} GROUP BY COALESCE(final_make, make)",
         (since,) if since else ()).fetchall()
-    brands = _merge_ci(brands_raw)          # [(label, count), ...] sorted desc
+    brands = merge_brand_counts(brands_raw)  # canonical, [(label, count)] desc
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -322,6 +324,83 @@ def brands_csv(range: str = "all", conn: sqlite3.Connection = Depends(get_db)):
     writer.writerow(["TOTAL", sum(n for _, n in brands)])
 
     filename = f"top_brands_{rng}_{date.today().isoformat()}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _brand_data(conn, name, rng):
+    """Drill into one canonical brand for a range: its top models + color palette
+    + total pairs. Merges all raw spellings that map to the brand (ASICS/Asics,
+    On/On Running). Cheap: one DISTINCT scan for spellings, then two GROUP BYs
+    over an indexed IN clause. Returns full (untruncated) lists."""
+    rng = rng if rng in _RANGES else "all"
+    since = _since_for(rng)
+    pw = "created_at >= ?" if since else "1=1"
+    P = (since,) if since else ()
+    canon = canonical_brand(name)
+    empty = {"brand": canon or (name or "").strip(), "range": rng, "pairs": 0,
+             "spellings": [], "models": [], "colors": []}
+    if not canon:
+        return empty
+
+    makes = [r[0] for r in conn.execute(
+        "SELECT DISTINCT COALESCE(final_make, make) FROM pairs "
+        "WHERE COALESCE(final_make, make) IS NOT NULL").fetchall()]
+    variants = variants_for(name, makes)
+    if not variants:
+        return empty
+
+    ph = ",".join("?" * len(variants))
+    where = f"COALESCE(final_make, make) IN ({ph}) AND {pw}"
+    params = tuple(variants) + P
+
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM pairs WHERE {where}", params).fetchone()[0]
+    models_raw = conn.execute(
+        f"SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
+        f"WHERE {where} GROUP BY COALESCE(final_model, model)", params).fetchall()
+    models = _merge_ci(models_raw)               # case-merge model spellings
+    colors = [(c, n) for c, n in conn.execute(
+        f"SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
+        f"IS NOT NULL AND {where} GROUP BY detected_color "
+        f"ORDER BY COUNT(*) DESC", params).fetchall()]
+
+    return {
+        "brand": canon, "range": rng, "pairs": total,
+        "spellings": sorted(variants),
+        "models": [{"label": l, "count": n} for l, n in models],
+        "colors": [{"label": c, "count": n} for c, n in colors],
+    }
+
+
+@router.get("/brand", summary="Drill into one brand: top models + color palette")
+def brand_detail(name: str, range: str = "all",
+                 conn: sqlite3.Connection = Depends(get_db)):
+    data = _brand_data(conn, name, range)
+    data["models"] = data["models"][:15]         # page shows the top slice
+    return data
+
+
+@router.get("/brand.csv", summary="Download one brand's models + palette as CSV")
+def brand_csv(name: str, range: str = "all",
+              conn: sqlite3.Connection = Depends(get_db)):
+    """Streams one brand's full model list + color palette as a CSV
+    (category,label,quantity). Honors ?range=."""
+    data = _brand_data(conn, name, range)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["category", "label", "quantity"])
+    for m in data["models"]:
+        writer.writerow(["model", m["label"], m["count"]])
+    for c in data["colors"]:
+        writer.writerow(["color", c["label"], c["count"]])
+    writer.writerow(["total_pairs", data["brand"], data["pairs"]])
+
+    slug = norm_key(data["brand"]).replace(" ", "_") or "brand"
+    filename = f"brand_{slug}_{data['range']}_{date.today().isoformat()}.csv"
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
