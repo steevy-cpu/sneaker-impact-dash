@@ -91,6 +91,28 @@ def _clean_weight(weight):
     return w
 
 
+def _clean_barcode(barcode):
+    """Collapse a FedEx GS1 routing-barcode scan down to its 12-digit tracking
+    number before storing.
+
+    A FedEx label carries both the 12-digit tracking number AND a long all-digit
+    "96" routing/SSCC barcode; when the scanner grabs the routing one you get a
+    22-34 digit string like 9622013700001205839600<tracking>. The last 12 digits
+    ARE the tracking number — which is exactly what the shipment match already
+    trims to (normalize_barcode, SHIPMENT_BARCODE_TRIM=12), so collapsing here
+    changes NOTHING about what matches/syncs; it only keeps the stored barcode
+    clean and stops the long form from ever being reinterpreted as a giant number
+    downstream (a CSV re-import of 9.6e33 is how the old rows got poisoned).
+
+    Conservative: only rewrites an over-long all-digit "96" routing scan. Normal
+    12-15 digit tracking numbers, UPS "1Z…" codes, and anything else pass through
+    untouched."""
+    bc = (barcode or "").strip()
+    if bc.isdigit() and bc.startswith("96") and len(bc) > 18:
+        return bc[-12:]
+    return bc
+
+
 def _has_box_data(good, eol, casuals, weight) -> bool:
     """Mirror the desktop rule: at least one box field must be > 0."""
     return any([(good or 0) > 0, (eol or 0) > 0, (casuals or 0) > 0, (weight or 0) > 0])
@@ -149,6 +171,7 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
     without) the photo — mirrors ShoeSort's fast-track /api/metadata. A photo
     can be attached later via /api/capture. Shipment lookup is wired in P5."""
     weight = _clean_weight(data.weight_of_box)
+    barcode = _clean_barcode(data.barcode)
     if not _has_box_data(data.total_good_sneakers, data.total_end_of_life,
                          data.casuals, weight):
         raise HTTPException(
@@ -158,11 +181,11 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
     tp_id = generate_table_photo_id(conn)
     _insert_table_photo(
         conn, tp_id, operator_id=data.operator_id, batch_id=data.batch_id,
-        image_path=None, barcode=data.barcode, weight=weight,
+        image_path=None, barcode=barcode, weight=weight,
         good=data.total_good_sneakers, eol=data.total_end_of_life, casuals=data.casuals,
     )
-    _attach_shipment(conn, tp_id, data.barcode)
-    _enqueue_outbox(conn, tp_id, data.barcode, {"weight": weight,
+    _attach_shipment(conn, tp_id, barcode)
+    _enqueue_outbox(conn, tp_id, barcode, {"weight": weight,
                                                 "good": data.total_good_sneakers,
                                                 "eol": data.total_end_of_life,
                                                 "casuals": data.casuals})
@@ -186,6 +209,7 @@ async def capture(
     row, ready for background processing (the worker arrives in P3). Validation:
     a readable image AND at least one box field > 0."""
     weight_of_box = _clean_weight(weight_of_box)
+    barcode = _clean_barcode(barcode)
     if not _has_box_data(total_good_sneakers, total_end_of_life, casuals, weight_of_box):
         raise HTTPException(
             status_code=422,
