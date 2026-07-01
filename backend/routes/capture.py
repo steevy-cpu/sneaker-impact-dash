@@ -104,12 +104,17 @@ def _clean_barcode(barcode):
     clean and stops the long form from ever being reinterpreted as a giant number
     downstream (a CSV re-import of 9.6e33 is how the old rows got poisoned).
 
-    Conservative: only rewrites an over-long all-digit "96" routing scan. Normal
-    12-15 digit tracking numbers, UPS "1Z…" codes, and anything else pass through
-    untouched."""
+    Also catches leading-junk and double-scan variants (e.g. "R9622…<tracking>",
+    "<tracking>9622…<tracking>") by keying off the DIGIT count, not a "96" prefix:
+    a routing/SSCC or double scan yields >=22 digits, and the real tracking is the
+    trailing 12. Normal 12-15 digit tracking numbers, UPS "1Z…" codes (letters →
+    few digits), and short/test scans pass through untouched. The trailing-12
+    result is identical to what normalize_barcode already matches on, so this only
+    cleans the STORED value — matching/sync are unchanged."""
     bc = (barcode or "").strip()
-    if bc.isdigit() and bc.startswith("96") and len(bc) > 18:
-        return bc[-12:]
+    digits = "".join(ch for ch in bc if ch.isdigit())
+    if len(digits) >= 22:
+        return digits[-12:]
     return bc
 
 
