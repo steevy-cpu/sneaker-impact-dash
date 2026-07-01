@@ -19,6 +19,9 @@ const COLOR_HEX = {
 };
 const charts = [];
 const n = (v) => (v == null ? "0" : Number(v).toLocaleString());
+const RANGE_LABEL = { today: "today", week: "this week", "30d": "in the last 30 days",
+                      "90d": "in the last 90 days", all: "since launch" };
+let currentRange = "all";
 
 function setText(id, v) { const e = document.getElementById(id); if (e) e.textContent = v; }
 function insight(id, html) { const e = document.getElementById(id); if (e) e.innerHTML = html; }
@@ -168,7 +171,7 @@ function render(d) {
                 x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } } } },
     });
     const pT = tl.pairs.reduce((a, b) => a + b, 0), phT = tl.photos.reduce((a, b) => a + b, 0);
-    insight("ins-timeline", `<b>${n(phT)}</b> photos and <b>${n(pT)}</b> pairs processed in the last 30 days`);
+    insight("ins-timeline", `<b>${n(phT)}</b> photos and <b>${n(pT)}</b> pairs processed ${RANGE_LABEL[d.range] || "over the shown window"}`);
 
     // ---- Airtable sync ----
     const ob = d.airtable.status;
@@ -183,15 +186,37 @@ function render(d) {
     setText("tb-foot", "Generated " + (d.generated_at || "").replace("T", " ") + " · auto-cached 60s");
 }
 
-async function load() {
+// Chart.js reuses <canvas> elements, so every chart from the previous window
+// must be torn down before we re-render, or it throws "Canvas already in use".
+function destroyCharts() {
+    charts.forEach((c) => { try { c.destroy(); } catch (_) {} });
+    charts.length = 0;
+}
+
+async function load(range) {
+    currentRange = range || currentRange;
+    const err = document.getElementById("tb-error");
+    err.style.display = "none";
     try {
-        const data = await api.getTableauStats();
+        const data = await api.getTableauStats(currentRange);
+        destroyCharts();
         render(data);
-    } catch (err) {
-        const e = document.getElementById("tb-error");
-        e.style.display = "block";
-        e.textContent = "Could not load visualizations: " + err.message;
+    } catch (e) {
+        err.style.display = "block";
+        err.textContent = "Could not load visualizations: " + e.message;
     }
 }
 
-document.addEventListener("DOMContentLoaded", load);
+function initRanges() {
+    const bar = document.getElementById("tb-ranges");
+    if (!bar) return;
+    bar.addEventListener("click", (e) => {
+        const btn = e.target.closest(".tb-range");
+        if (!btn || btn.classList.contains("active")) return;
+        bar.querySelectorAll(".tb-range").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        load(btn.dataset.range);
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => { initRanges(); load("all"); });

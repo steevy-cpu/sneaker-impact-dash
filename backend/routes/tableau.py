@@ -30,8 +30,30 @@ from backend.database import get_db
 router = APIRouter(prefix="/api/tableau", tags=["Tableau"])
 
 _TTL = 60.0                       # seconds; the dataset changes slowly
-_CACHE = {"ts": 0.0, "data": None}
+_CACHE = {}                       # range key -> {"ts": float, "data": dict}
 _LOCK = threading.Lock()
+
+# Time windows the page can request. "all" == since the new system launched
+# (the data itself starts 2026-06-05, so no explicit floor is needed).
+_RANGES = ("today", "week", "30d", "90d", "all")
+
+
+def _since_for(range_key):
+    """ISO lower-bound for a range key, or None for 'all' (no floor). created_at
+    is stored as ISO 8601, which sorts lexicographically, so a string compare is
+    correct and index-friendly."""
+    today = date.today()
+    now = datetime.now()
+    if range_key == "today":
+        return today.isoformat()                       # 'YYYY-MM-DD' <= any same-day ts
+    if range_key == "week":                            # calendar week, Monday start
+        monday = today - timedelta(days=today.weekday())
+        return monday.isoformat()
+    if range_key == "30d":
+        return (now - timedelta(days=30)).isoformat()
+    if range_key == "90d":
+        return (now - timedelta(days=90)).isoformat()
+    return None                                        # all
 
 
 def _known(v):
@@ -54,7 +76,7 @@ def _merge_ci(rows):
     return out
 
 
-def _bucket_conf(conn, col, where="1=1"):
+def _bucket_conf(conn, col, where="1=1", params=()):
     """Confidence histogram for a pairs column over fixed bands."""
     bands = [("0–50%", 0.0, 0.5), ("50–70%", 0.5, 0.7), ("70–80%", 0.7, 0.8),
              ("80–90%", 0.8, 0.9), ("90–100%", 0.9, 1.0001)]
@@ -63,45 +85,57 @@ def _bucket_conf(conn, col, where="1=1"):
     for _, lo, hi in bands:
         n = conn.execute(
             f"SELECT COUNT(*) FROM pairs WHERE {col} IS NOT NULL "
-            f"AND {col} >= ? AND {col} < ? AND {where}", (lo, hi)).fetchone()[0]
+            f"AND {col} >= ? AND {col} < ? AND {where}", (lo, hi) + tuple(params)
+        ).fetchone()[0]
         counts.append(n)
     return {"labels": labels, "counts": counts}
 
 
-def _compute(conn: sqlite3.Connection) -> dict:
+def _compute(conn: sqlite3.Connection, since=None) -> dict:
     cur = conn.execute
 
+    # created_at filter fragments — injected into each table's WHERE. `since` is
+    # None for 'all' (fragments collapse to a no-op so the SQL is unchanged).
+    pw = "created_at >= ?" if since else "1=1"        # pairs
+    tw = "created_at >= ?" if since else "1=1"        # table_photos
+    ow = "created_at >= ?" if since else "1=1"        # airtable_outbox
+    P = (since,) if since else ()                      # one bound param per query
+
     # ---- dataset / status -------------------------------------------------
-    status = dict(cur("SELECT status, COUNT(*) FROM table_photos "
-                      "GROUP BY status").fetchall())
+    status = dict(cur(f"SELECT status, COUNT(*) FROM table_photos "
+                      f"WHERE {tw} GROUP BY status", P).fetchall())
     total_photos = sum(status.values())
-    total_pairs = cur("SELECT COUNT(*) FROM pairs").fetchone()[0]
-    singles = cur("SELECT COUNT(*) FROM pairs WHERE pair_score IS NULL").fetchone()[0]
+    total_pairs = cur(f"SELECT COUNT(*) FROM pairs WHERE {pw}", P).fetchone()[0]
+    singles = cur(f"SELECT COUNT(*) FROM pairs WHERE pair_score IS NULL "
+                  f"AND {pw}", P).fetchone()[0]
     true_pairs = total_pairs - singles
     # one record can be a tied pair (2 shoes) or a single (1 shoe)
     total_shoes = true_pairs * 2 + singles
 
-    known_make = cur("SELECT COUNT(*) FROM pairs WHERE "
-                     "COALESCE(final_make, make) NOT IN ('unknown','') "
-                     "AND COALESCE(final_make, make) IS NOT NULL").fetchone()[0]
-    known_model = cur("SELECT COUNT(*) FROM pairs WHERE "
-                      "COALESCE(final_model, model) NOT IN ('unknown','') "
-                      "AND COALESCE(final_model, model) IS NOT NULL").fetchone()[0]
+    known_make = cur(f"SELECT COUNT(*) FROM pairs WHERE "
+                     f"COALESCE(final_make, make) NOT IN ('unknown','') "
+                     f"AND COALESCE(final_make, make) IS NOT NULL "
+                     f"AND {pw}", P).fetchone()[0]
+    known_model = cur(f"SELECT COUNT(*) FROM pairs WHERE "
+                      f"COALESCE(final_model, model) NOT IN ('unknown','') "
+                      f"AND COALESCE(final_model, model) IS NOT NULL "
+                      f"AND {pw}", P).fetchone()[0]
 
-    brands_raw = cur("SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
-                     "GROUP BY COALESCE(final_make, make)").fetchall()
+    brands_raw = cur(f"SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
+                     f"WHERE {pw} GROUP BY COALESCE(final_make, make)", P).fetchall()
     brands = _merge_ci(brands_raw)
-    models_raw = cur("SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
-                     "GROUP BY COALESCE(final_model, model)").fetchall()
+    models_raw = cur(f"SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
+                     f"WHERE {pw} GROUP BY COALESCE(final_model, model)", P).fetchall()
     models = _merge_ci(models_raw)
 
     colors = [(c, n) for c, n in cur(
-        "SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
-        "IS NOT NULL GROUP BY detected_color ORDER BY COUNT(*) DESC").fetchall()]
+        f"SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
+        f"IS NOT NULL AND {pw} GROUP BY detected_color "
+        f"ORDER BY COUNT(*) DESC", P).fetchall()]
 
     # ---- AI classification ------------------------------------------------
-    src_raw = dict(cur("SELECT COALESCE(prediction_source,'(none)'), COUNT(*) "
-                       "FROM pairs GROUP BY prediction_source").fetchall())
+    src_raw = dict(cur(f"SELECT COALESCE(prediction_source,'(none)'), COUNT(*) "
+                       f"FROM pairs WHERE {pw} GROUP BY prediction_source", P).fetchall())
     src = {"local": 0, "cloud · Gemini": 0, "cloud · OpenAI": 0, "unattributed": 0}
     for s, n in src_raw.items():
         if s == "local":
@@ -113,14 +147,14 @@ def _compute(conn: sqlite3.Connection) -> dict:
         else:
             src["unattributed"] += n
 
-    review = dict(cur("SELECT review_status, COUNT(*) FROM pairs "
-                      "GROUP BY review_status").fetchall())
+    review = dict(cur(f"SELECT review_status, COUNT(*) FROM pairs "
+                      f"WHERE {pw} GROUP BY review_status", P).fetchall())
 
     ai = {
         "source": src,
-        "make_conf": _bucket_conf(conn, "make_confidence"),
-        "model_conf": _bucket_conf(conn, "model_confidence"),
-        "color_conf": _bucket_conf(conn, "color_confidence"),
+        "make_conf": _bucket_conf(conn, "make_confidence", pw, P),
+        "model_conf": _bucket_conf(conn, "model_confidence", pw, P),
+        "color_conf": _bucket_conf(conn, "color_confidence", pw, P),
         "review": review,
         "known_make": known_make,
         "unknown_make": total_pairs - known_make,
@@ -131,11 +165,11 @@ def _compute(conn: sqlite3.Connection) -> dict:
     # ---- pairing ----------------------------------------------------------
     ps_bands = [("<50%", 0, 0.5), ("50–65%", 0.5, 0.65), ("65–80%", 0.65, 0.8),
                 ("80–90%", 0.8, 0.9), ("90–100%", 0.9, 1.0001)]
-    ps_counts = [cur("SELECT COUNT(*) FROM pairs WHERE pair_score >= ? "
-                     "AND pair_score < ?", (lo, hi)).fetchone()[0]
+    ps_counts = [cur(f"SELECT COUNT(*) FROM pairs WHERE pair_score >= ? "
+                     f"AND pair_score < ? AND {pw}", (lo, hi) + P).fetchone()[0]
                  for _, lo, hi in ps_bands]
-    avg_ps = cur("SELECT AVG(pair_score) FROM pairs WHERE pair_score "
-                 "IS NOT NULL").fetchone()[0]
+    avg_ps = cur(f"SELECT AVG(pair_score) FROM pairs WHERE pair_score "
+                 f"IS NOT NULL AND {pw}", P).fetchone()[0]
     pairing = {
         "pairs": true_pairs, "singles": singles,
         "score_hist": {"labels": [b[0] for b in ps_bands], "counts": ps_counts},
@@ -143,14 +177,14 @@ def _compute(conn: sqlite3.Connection) -> dict:
     }
 
     # ---- airtable sync ----------------------------------------------------
-    ob_status = dict(cur("SELECT status, COUNT(*) FROM airtable_outbox "
-                         "GROUP BY status").fetchall())
+    ob_status = dict(cur(f"SELECT status, COUNT(*) FROM airtable_outbox "
+                         f"WHERE {ow} GROUP BY status", P).fetchall())
     ob_total = sum(ob_status.values())
     synced = ob_status.get("synced", 0)
     errs = [(e or "(none)", n) for e, n in cur(
-        "SELECT last_error, COUNT(*) FROM airtable_outbox WHERE status!='synced' "
-        "AND last_error IS NOT NULL GROUP BY last_error ORDER BY COUNT(*) "
-        "DESC LIMIT 6").fetchall()]
+        f"SELECT last_error, COUNT(*) FROM airtable_outbox WHERE status!='synced' "
+        f"AND last_error IS NOT NULL AND {ow} GROUP BY last_error ORDER BY COUNT(*) "
+        f"DESC LIMIT 6", P).fetchall()]
     airtable = {
         "status": ob_status,
         "sync_rate": round(100.0 * synced / ob_total, 1) if ob_total else 0.0,
@@ -158,29 +192,37 @@ def _compute(conn: sqlite3.Connection) -> dict:
     }
 
     # ---- box composition --------------------------------------------------
-    b = cur("SELECT COALESCE(SUM(total_good_sneakers),0), "
-            "COALESCE(SUM(total_end_of_life),0), COALESCE(SUM(casuals),0) "
-            "FROM table_photos").fetchone()
+    b = cur(f"SELECT COALESCE(SUM(total_good_sneakers),0), "
+            f"COALESCE(SUM(total_end_of_life),0), COALESCE(SUM(casuals),0) "
+            f"FROM table_photos WHERE {tw}", P).fetchone()
     # Weight is operator-entered and has occasional garbage (a barcode typed into
     # the weight box -> 1e34). Bound to a sane physical range so one bad row
     # can't blow up the totals.
-    w = cur("SELECT COALESCE(SUM(weight_of_box),0), COALESCE(AVG(weight_of_box),0), "
-            "COUNT(*) FROM table_photos WHERE weight_of_box > 0 "
-            "AND weight_of_box < 1000").fetchone()
+    w = cur(f"SELECT COALESCE(SUM(weight_of_box),0), COALESCE(AVG(weight_of_box),0), "
+            f"COUNT(*) FROM table_photos WHERE weight_of_box > 0 "
+            f"AND weight_of_box < 1000 AND {tw}", P).fetchone()
     box = {"good": b[0], "eol": b[1], "casuals": b[2],
            "total_weight": round(w[0], 1), "avg_weight": round(w[1], 1),
            "weighed_boxes": w[2]}
 
-    # ---- timeline (last 30 days, zero-filled) -----------------------------
+    # ---- timeline (daily, spanning the selected range, zero-filled) -------
+    # Start at the range floor; for 'all' start at the first photo (system
+    # launch). Cap the drawn span so the chart stays readable.
+    if since:
+        start_day = date.fromisoformat(since[:10])
+    else:
+        first = cur("SELECT MIN(date(created_at)) FROM table_photos").fetchone()[0]
+        start_day = date.fromisoformat(first) if first else date.today() - timedelta(days=29)
+    ndays = max(1, min((date.today() - start_day).days + 1, 120))
+    days = [(date.today() - timedelta(days=i)).isoformat() for i in range(ndays - 1, -1, -1)]
     photo_by_day = dict(cur(
         "SELECT date(created_at), COUNT(*) FROM table_photos "
-        "WHERE created_at >= ? GROUP BY date(created_at)",
-        ((date.today() - timedelta(days=29)).isoformat(),)).fetchall())
+        "WHERE date(created_at) >= ? GROUP BY date(created_at)",
+        (days[0],)).fetchall())
     pair_by_day = dict(cur(
-        "SELECT date(created_at), COUNT(*) FROM pairs WHERE created_at >= ? "
+        "SELECT date(created_at), COUNT(*) FROM pairs WHERE date(created_at) >= ? "
         "GROUP BY date(created_at)",
-        ((date.today() - timedelta(days=29)).isoformat(),)).fetchall())
-    days = [(date.today() - timedelta(days=i)).isoformat() for i in range(29, -1, -1)]
+        (days[0],)).fetchall())
     timeline = {
         "days": days,
         "photos": [photo_by_day.get(d, 0) for d in days],
@@ -212,31 +254,38 @@ def _compute(conn: sqlite3.Connection) -> dict:
 
 
 @router.get("/stats", summary="All Tableau visualizations in one cached payload")
-def tableau_stats(conn: sqlite3.Connection = Depends(get_db)):
+def tableau_stats(range: str = "all", conn: sqlite3.Connection = Depends(get_db)):
+    rng = range if range in _RANGES else "all"
     now = time.time()
-    if _CACHE["data"] is not None and (now - _CACHE["ts"]) < _TTL:
-        return _CACHE["data"]
+    ent = _CACHE.get(rng)
+    if ent and (now - ent["ts"]) < _TTL:
+        return ent["data"]
     with _LOCK:
         # Re-check inside the lock so only one thread computes per TTL window.
-        if _CACHE["data"] is not None and (time.time() - _CACHE["ts"]) < _TTL:
-            return _CACHE["data"]
-        data = _compute(conn)
-        _CACHE["data"] = data
-        _CACHE["ts"] = time.time()
+        ent = _CACHE.get(rng)
+        if ent and (time.time() - ent["ts"]) < _TTL:
+            return ent["data"]
+        data = _compute(conn, _since_for(rng))
+        data["range"] = rng
+        _CACHE[rng] = {"ts": time.time(), "data": data}
         return data
 
 
 @router.get("/brands.csv", summary="Download top-brand quantities as CSV")
-def brands_csv(conn: sqlite3.Connection = Depends(get_db)):
+def brands_csv(range: str = "all", conn: sqlite3.Connection = Depends(get_db)):
     """
     Streams every identified brand with its pair quantity as a CSV download,
-    sorted highest-first, with a TOTAL row. Same cheap GROUP BY the stats page
-    uses (case-insensitively merged via _merge_ci), so it's sub-millisecond and
-    runs in FastAPI's threadpool — no impact on the live event loop.
+    sorted highest-first, with a TOTAL row. Honors the same ?range= window as the
+    stats page. Same cheap GROUP BY (case-insensitively merged via _merge_ci), so
+    it's sub-millisecond and runs in FastAPI's threadpool — no event-loop impact.
     """
+    rng = range if range in _RANGES else "all"
+    since = _since_for(rng)
+    pw = "created_at >= ?" if since else "1=1"
     brands_raw = conn.execute(
-        "SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
-        "GROUP BY COALESCE(final_make, make)").fetchall()
+        f"SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
+        f"WHERE {pw} GROUP BY COALESCE(final_make, make)",
+        (since,) if since else ()).fetchall()
     brands = _merge_ci(brands_raw)          # [(label, count), ...] sorted desc
 
     output = io.StringIO()
@@ -246,7 +295,7 @@ def brands_csv(conn: sqlite3.Connection = Depends(get_db)):
         writer.writerow([label, count])
     writer.writerow(["TOTAL", sum(n for _, n in brands)])
 
-    filename = f"top_brands_{date.today().isoformat()}.csv"
+    filename = f"top_brands_{rng}_{date.today().isoformat()}.csv"
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",

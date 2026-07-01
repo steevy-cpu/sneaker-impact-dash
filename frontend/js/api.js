@@ -129,9 +129,11 @@ const api = {
         return apiFetch("/api/analytics/alerts");
     },
 
-    /** All Tableau visualizations in one cached payload. */
-    getTableauStats() {
-        return apiFetch("/api/tableau/stats");
+    /** All Tableau visualizations in one cached payload, for a time window
+     *  (today | week | 30d | 90d | all). */
+    getTableauStats(range) {
+        const q = range && range !== "all" ? "?range=" + encodeURIComponent(range) : "";
+        return apiFetch("/api/tableau/stats" + q);
     },
 
     /** Next batch of PENDING pairs ordered for gold-label value (Quick Label). */
