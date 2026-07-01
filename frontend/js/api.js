@@ -105,6 +105,11 @@ const api = {
         return apiFetch("/api/health");
     },
 
+    /** Proactive data-integrity checks (garbage weights, bad barcodes, etc.). */
+    getDataQuality() {
+        return apiFetch("/api/data-quality");
+    },
+
     /**
      * Daily summary stats for the dashboard home.
      *

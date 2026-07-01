@@ -158,6 +158,29 @@ async function loadHealthAlerts() {
     } catch (_) { /* non-critical */ }
 }
 
+async function loadDataQuality() {
+    const list = document.getElementById("dq-list");
+    const sum = document.getElementById("dq-summary");
+    if (!list) return;
+    try {
+        const d = await api.getDataQuality();
+        const c = d.counts || {};
+        sum.textContent = `${c.fail || 0} fail · ${c.warn || 0} warn · ${c.ok || 0} ok`;
+        sum.style.color = d.status === "fail" ? "#dc2626" : d.status === "warn" ? "#d97706" : "#16a34a";
+        list.innerHTML = d.checks.map(ck => `
+            <div class="dq-item">
+                <span class="dq-dot ${ck.status}"></span>
+                <div class="dq-main">
+                    <span class="dq-label">${ck.label}</span><span class="dq-val ${ck.status}">${ck.value}</span>
+                    <div class="dq-detail">${ck.detail}</div>
+                    ${ck.fix ? `<div class="dq-fix">→ ${ck.fix}</div>` : ""}
+                </div>
+            </div>`).join("");
+    } catch (_) {
+        sum.textContent = "unavailable";
+    }
+}
+
 // ── Main load ─────────────────────────────────────────────────────────────
 async function loadHealth() {
     try {
@@ -168,6 +191,7 @@ async function loadHealth() {
         initSimControls(health.mode);
         updateSubtitle();
         loadHealthAlerts();
+        loadDataQuality();
     } catch (err) {
         document.getElementById("health-grid").innerHTML =
             `<div class="error-state" style="grid-column:1/-1">

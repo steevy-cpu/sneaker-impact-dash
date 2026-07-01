@@ -157,6 +157,27 @@
             <div class="loading-state" style="grid-column:1/-1">Loading...</div>
         </div>
 
+        <!-- Data quality monitor -->
+        <div class="card" id="dq-card">
+            <div class="card-header">
+                <span class="card-title">🩺 Data Quality</span>
+                <span id="dq-summary" style="font-size:12px; color:var(--text-muted);">Checking…</span>
+            </div>
+            <div id="dq-list"></div>
+        </div>
+        <style>
+          .dq-item { display:flex; align-items:flex-start; gap:12px; padding:11px 4px; border-bottom:1px solid var(--border,#f1f5f9); }
+          .dq-item:last-child { border-bottom:0; }
+          .dq-dot { flex:none; width:10px; height:10px; border-radius:50%; margin-top:5px; }
+          .dq-dot.ok { background:#22c55e; } .dq-dot.warn { background:#f59e0b; } .dq-dot.fail { background:#ef4444; }
+          .dq-main { flex:1; }
+          .dq-label { font-weight:700; font-size:13px; color:var(--text,#0f172a); }
+          .dq-val { font-weight:700; font-size:13px; margin-left:8px; }
+          .dq-val.ok { color:#16a34a; } .dq-val.warn { color:#d97706; } .dq-val.fail { color:#dc2626; }
+          .dq-detail { font-size:12px; color:var(--text-muted,#64748b); margin-top:2px; }
+          .dq-fix { font-size:12px; color:#6366f1; margin-top:3px; }
+        </style>
+
         <!-- Camera status -->
         <div class="card">
             <div class="card-header">
@@ -171,9 +192,9 @@
 </div><!-- /.layout -->
 
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=6"></script>
+<script src="js/api.js?v=7"></script>
 <script src="js/utils.js"></script>
 <script src="js/simulation_controls.js?v=6"></script>
-<script src="js/system_health.js?v=6"></script>
+<script src="js/system_health.js?v=7"></script>
 </body>
 </html>
