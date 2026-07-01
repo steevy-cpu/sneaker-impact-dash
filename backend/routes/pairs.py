@@ -5,17 +5,23 @@ Pairs are created by the background pipeline (P3) from a table photo, then
 optionally confirmed/overridden by a human reviewer. The dash's existing
 review workflow now applies here, at the pair level.
 """
+import csv
+import io
 import json
 import sqlite3
 import threading
 import time
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from backend.config import IMAGES_DIR
 from backend.database import get_db
 from backend.models import PairReviewUpdate
+from backend.utils.brands import canonical_brand
+from backend.utils.models import clean_model, model_key
 
 router = APIRouter(prefix="/api/pairs", tags=["Pairs"])
 
@@ -187,6 +193,94 @@ def gold_labels(
         "stats":     _gold_stats_cached(conn),
         "items":     [pair_to_dict(r) for r in rows],
     }
+
+
+# Colors are already a controlled vocab in the DB; normalize defensively.
+_COLOR_FIX = {"grey": "gray"}
+
+
+def _norm_color(c):
+    c = (c or "").strip().lower()
+    if c in ("", "unknown"):
+        return "unknown"
+    return _COLOR_FIX.get(c, c)
+
+
+def _model_canon_map(conn):
+    """Dataset-wide canonical MODEL spelling map: model_key -> most common
+    brand-stripped spelling. Lets gold labels ('GEL-KAYANO') export with the
+    dataset's dominant spelling ('Gel-Kayano') for consistent training targets."""
+    rows = conn.execute(
+        "SELECT COALESCE(final_make, make), COALESCE(final_model, model), COUNT(*) "
+        "FROM pairs WHERE COALESCE(final_model, model) NOT IN ('', 'unknown') "
+        "AND COALESCE(final_model, model) IS NOT NULL GROUP BY 1, 2").fetchall()
+    agg = {}                                   # key -> {spelling: count}
+    for make, model, cnt in rows:
+        cleaned = clean_model(model, make)
+        key = model_key(cleaned)
+        if not key or key == "unknown":
+            continue
+        agg.setdefault(key, {})
+        agg[key][cleaned] = agg[key].get(cleaned, 0) + cnt
+    return {k: max(sp, key=sp.get) for k, sp in agg.items()}
+
+
+@router.get("/gold.csv", summary="Download the cleaned, training-ready gold set")
+def gold_csv(conn: sqlite3.Connection = Depends(get_db)):
+    """Streams every human-verified gold pair with NORMALIZED labels — canonical
+    brand (ASICS/Asics merged), brand-stripped + canonically-spelled model
+    ('Hoka One One Clifton' -> 'Clifton'), and controlled-vocab color — plus the
+    source-photo group id so training can split leak-free (pairs from one table
+    photo are near-duplicates). Deduped by crop image. Read-only + cheap
+    (threadpool), so it never impacts the live site."""
+    canon_model = _model_canon_map(conn)
+    # ONLY human-verified fields (final_*) — never fall back to the ML prediction,
+    # or the "gold" set would be polluted with unverified guesses. GOLD_WHERE
+    # guarantees final_make; final_model/final_color may be unset (blank/unknown).
+    rows = conn.execute(
+        f"SELECT id, table_photo_id, image_path, final_make, "
+        f"final_model, final_color, label_action "
+        f"FROM pairs WHERE {GOLD_WHERE} ORDER BY table_photo_id, id").fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["pair_id", "source_photo", "image_path", "brand", "model",
+                     "color", "label_action"])
+    seen_images = set()
+    n_rows = n_model = 0
+    brands = set()
+    for r in rows:
+        img = r["image_path"] or ""
+        if img and img in seen_images:          # dedup identical crops
+            continue
+        seen_images.add(img)
+        make = r["final_make"]
+        brand = canonical_brand(make)
+        if not brand:                           # gold requires a real brand
+            continue
+        cleaned = clean_model(r["final_model"], make)   # '' if unset/unknown
+        key = model_key(cleaned)
+        model_out = canon_model.get(key, cleaned) if key and key != "unknown" else ""
+        color = _norm_color(r["final_color"])
+        writer.writerow([r["id"], r["table_photo_id"], img, brand, model_out, color,
+                         r["label_action"] or ""])
+        n_rows += 1
+        brands.add(brand)
+        if model_out:
+            n_model += 1
+
+    filename = f"gold_set_{date.today().isoformat()}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # Handy summary without opening the file / a second request.
+            "X-Gold-Rows": str(n_rows),
+            "X-Gold-Brands": str(len(brands)),
+            "X-Gold-With-Model": str(n_model),
+        },
+    )
 
 
 @router.get("/{pair_id}", summary="Get a single pair")
