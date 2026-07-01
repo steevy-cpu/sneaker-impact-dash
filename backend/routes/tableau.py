@@ -28,6 +28,7 @@ from fastapi.responses import StreamingResponse
 from backend.database import get_db
 from backend.utils.brands import (canonical_brand, merge_brand_counts,
                                   norm_key, variants_for)
+from backend.utils.models import merge_model_counts
 
 router = APIRouter(prefix="/api/tableau", tags=["Tableau"])
 
@@ -66,22 +67,6 @@ def _since_for(range_key):
 
 def _known(v):
     return v not in (None, "", "unknown", "Unknown", "UNKNOWN")
-
-
-def _merge_ci(rows):
-    """Merge (label, count) rows case-insensitively, keeping the most common
-    original spelling as the display label (fixes ASICS vs Asics). Sorted desc."""
-    agg = {}                       # key -> [count, {spelling: count}]
-    for label, n in rows:
-        if not _known(label):
-            continue
-        key = label.strip().lower()
-        e = agg.setdefault(key, [0, {}])
-        e[0] += n
-        e[1][label] = e[1].get(label, 0) + n
-    out = [(max(sp, key=sp.get), tot) for tot, sp in agg.values()]
-    out.sort(key=lambda z: z[1], reverse=True)
-    return out
 
 
 def _bucket_conf(conn, col, where="1=1", params=()):
@@ -134,7 +119,7 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
     brands = merge_brand_counts(brands_raw)     # canonical: ASICS/Asics -> one
     models_raw = cur(f"SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
                      f"WHERE {pw} GROUP BY COALESCE(final_model, model)", P).fetchall()
-    models = _merge_ci(models_raw)
+    models = merge_model_counts(models_raw)     # case+punct merge of spellings
 
     colors = [(c, n) for c, n in cur(
         f"SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
@@ -304,7 +289,7 @@ def brands_csv(range: str = "all", conn: sqlite3.Connection = Depends(get_db)):
     """
     Streams every identified brand with its pair quantity as a CSV download,
     sorted highest-first, with a TOTAL row. Honors the same ?range= window as the
-    stats page. Same cheap GROUP BY (case-insensitively merged via _merge_ci), so
+    stats page. Same cheap GROUP BY (canonically merged via merge_brand_counts), so
     it's sub-millisecond and runs in FastAPI's threadpool — no event-loop impact.
     """
     rng = range if range in _RANGES else "all"
@@ -362,7 +347,7 @@ def _brand_data(conn, name, rng):
     models_raw = conn.execute(
         f"SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
         f"WHERE {where} GROUP BY COALESCE(final_model, model)", params).fetchall()
-    models = _merge_ci(models_raw)               # case-merge model spellings
+    models = merge_model_counts(models_raw)      # case+punct merge of spellings
     colors = [(c, n) for c, n in conn.execute(
         f"SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
         f"IS NOT NULL AND {where} GROUP BY detected_color "
