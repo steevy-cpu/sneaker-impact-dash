@@ -61,6 +61,12 @@ def process_table_photo(tp_id: str, image_fs_path: str) -> list:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=ENGINE_JOB_TIMEOUT)
+        # Surface the engine's pairing decisions to the worker log (journal),
+        # even on success — otherwise [pair]/COLOR VETO lines are only visible on
+        # a failure tail, making pairing impossible to diagnose live.
+        for _l in (proc.stderr or "").splitlines():
+            if "[pair]" in _l:
+                print(f"[engine {tp_id}] {_l.strip()}", flush=True)
         try:
             with open(out_json) as f:
                 data = json.load(f)
