@@ -208,6 +208,8 @@ def main():
                     veto_min=getattr(config, "SEGMENT_PAIR_VETO_MIN", 0.25),
                     rescue_min=getattr(config, "SEGMENT_PAIR_RESCUE_MIN", 0.80),
                     max_dist_frac=getattr(config, "SEGMENT_PAIR_MAX_DIST_FRAC", 0.20),
+                    color_veto=getattr(config, "SEGMENT_PAIR_COLOR_VETO", False),
+                    color_conf_min=getattr(config, "SEGMENT_PAIR_COLOR_CONF_MIN", 0.5),
                     log=print,                          # stdout is redirected to stderr
                 )
             elif method == "visual":
