@@ -16,7 +16,9 @@ from datetime import datetime, timedelta
 
 from backend.config import (ENGINE_ENABLED, ENGINE_JOB_TIMEOUT,
                             ENGINE_POLL_SECONDS, IMAGES_DIR, CLOUD_CONCURRENCY,
-                            PAIRS_DIR, AUTO_APPROVE_CONF, LOCAL_CONF_MIN,
+                            PAIRS_DIR, AUTO_APPROVE_CONF, LABEL_EXPORT_MIN_CONF,
+                            SHOE_GATE_ENABLED, SHOE_GATE_MIN_CONF,
+                            LOCAL_CONF_MIN,
                             LOCAL_COLOR_CONF_MIN, SEEN_SHOE_ENABLED,
                             SEEN_SHOE_MIN_SIM, SEEN_SHOE_TOP_K, SEEN_SHOE_MIN_AGREE,
                             SEEN_SHOE_DEDUP_SIM, SEEN_SHOE_MAX_ROWS,
@@ -202,7 +204,21 @@ class EngineWorker:
                     "sources": p.get("model_sources") or [],
                     "source": "local", "from_cache": False,
                     "emb": p.get("embedding"), "emb_name": p.get("embedder"),
+                    "shoe_conf": p.get("shoe_confidence"),
                 }
+                # SHOENESS GATE: a pair the engine's CLIP scored below the floor
+                # is a non-shoe (blower/box/bag) -> don't pay for a cloud call and
+                # don't let it into label_data. Fail-safe: no score / gate off ->
+                # treated as a shoe (never blocks). See SHOE_GATE_* in config.
+                sc = st["shoe_conf"]
+                st["is_shoe"] = not (
+                    SHOE_GATE_ENABLED and isinstance(sc, (int, float))
+                    and sc < SHOE_GATE_MIN_CONF)
+                if not st["is_shoe"]:
+                    st["sources"] = [f"shoe_gate:not_footwear({sc:.2f})"]
+                    print(f"[worker] {tp_id} pair {idx}: BLOCKED non-shoe "
+                          f"(P_footwear={sc:.2f} < {SHOE_GATE_MIN_CONF}) -> no cloud/export",
+                          flush=True)
                 # HYBRID: keep the local prediction only if MAKE and MODEL are
                 # both confident (>= LOCAL_CONF_MIN) and not "unknown". Color is
                 # NOT part of this gate — it's always taken locally (below).
@@ -239,7 +255,7 @@ class EngineWorker:
 
                 st["needs_cloud"] = bool(
                     not local_good and not st["from_cache"]
-                    and st["img_file"] and cloud_enabled())
+                    and st["img_file"] and cloud_enabled() and st["is_shoe"])
                 states.append(st)
 
             # ---- Pass B: run the cloud identify calls CONCURRENTLY. They're
@@ -330,14 +346,17 @@ class EngineWorker:
                 )
                 if confident:
                     approved += 1
-                # Save to label_data: auto-approved local pairs AND every
-                # cloud-predicted pair with a real brand+model (training data).
-                # A cache hit is NOT exported — it's a near-duplicate of a crop
-                # already in label_data.
+                # Save to label_data: auto-approved local pairs AND cloud-
+                # predicted pairs with a real brand+model AND make/brand
+                # confidence >= LABEL_EXPORT_MIN_CONF. The cloud floor is the fix
+                # for Gemini's calibrated-low guesses on non-shoes (make_conf
+                # ~0.1) poisoning the training set. A cache hit is NOT exported —
+                # it's a near-duplicate of a crop already in label_data.
                 has_label = (make and str(make).lower() != "unknown"
                              and model and str(model).lower() != "unknown")
-                if (st["img_file"] and has_label and (confident or used_cloud)
-                        and not st["from_cache"]):
+                cloud_ok = used_cloud and _known(make, mk_c, LABEL_EXPORT_MIN_CONF)
+                if (st["img_file"] and has_label and (confident or cloud_ok)
+                        and st["is_shoe"] and not st["from_cache"]):
                     export_label(str(PAIRS_DIR / st["img_file"]),
                                  color=color, make=make, model=model,
                                  make_conf=mk_c, model_conf=md_c, color_conf=color_c,

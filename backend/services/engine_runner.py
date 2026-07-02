@@ -265,6 +265,19 @@ def main():
                       "using detection masks.")
 
         brander = build_brand_classifier(config)
+        # Zero-shot "is this footwear?" scorer, REUSING the brand CLIP model
+        # (no extra GPU load). Emitted per pair as shoe_confidence so the dash
+        # can refuse to spend a cloud call on non-shoes (a blower, box, bag).
+        # Fail-safe: any error -> shoeness stays None and the field is omitted.
+        shoeness = None
+        try:
+            from clip_shoeness import ClipShoeness
+            _bm, _bp = getattr(brander, "model", None), getattr(brander, "preprocess", None)
+            if _bm is not None and _bp is not None:
+                _sh = ClipShoeness(model=_bm, preprocess=_bp)
+                shoeness = _sh if _sh.ok else None
+        except Exception as exc:                           # noqa: BLE001 - fail safe
+            print(f"[engine] shoeness init failed ({exc}); continuing without it.")
         # The local model-ID (ollama VLM, ~3s/pair) is optional: the dash cloud
         # step re-IDs most pairs and overrides it, so it's usually wasted work.
         # Skip building it when asked -> model stays "unknown" and the cloud /
@@ -314,6 +327,9 @@ def main():
                 except Exception:                      # noqa: BLE001 - fail safe
                     pass
 
+            # Zero-shot shoeness on the SAME (whitened) crop the cloud would see.
+            shoe_conf = shoeness.score(crop) if shoeness is not None else None
+
             fname = f"{args.id_prefix}_{i}.jpg"
             cv2.imwrite(os.path.join(args.out_dir, fname), crop)
 
@@ -342,6 +358,7 @@ def main():
                 "model":            model,
                 "model_confidence": _f(model_conf),
                 "model_sources":    sources or [],
+                "shoe_confidence":  _f(shoe_conf),
                 "embedding":        embedding,
                 "embedder":         embedder_name,
             })

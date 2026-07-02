@@ -90,6 +90,20 @@ ENGINE_POLL_SECONDS  = float(os.getenv("ENGINE_POLL_SECONDS", "3"))   # worker p
 # Ollama model confidence is uncalibrated (~0.95 flat), so in practice this
 # gate is driven mostly by the make (CLIP) confidence.
 AUTO_APPROVE_CONF = float(os.getenv("AUTO_APPROVE_CONF", "0.80"))
+# Minimum MAKE/brand confidence for a CLOUD prediction to be exported to
+# label_data. Local auto-approve already clears AUTO_APPROVE_CONF (0.80); cloud
+# answers previously had NO floor, so Gemini's calibrated-low guesses on
+# non-shoes / junk (make_conf ~0.1) were poisoning the training set. Brand
+# confidence is the reliable signal (model_conf is noisy), so the floor is on
+# make. Raise to reject more, lower to keep more.
+LABEL_EXPORT_MIN_CONF = float(os.getenv("LABEL_EXPORT_MIN_CONF", "0.60"))
+# Shoeness gate: the engine emits a per-pair CLIP zero-shot P(footwear)
+# (shoe_confidence). When enabled, a pair below SHOE_GATE_MIN_CONF is treated as
+# a NON-shoe (a blower/box/bag): no cloud call, not exported to label_data.
+# Validated 2026-07-01 on 698 crops: junk ~0.00, real shoes >=0.39 -> a 0.10
+# floor drops only junk, zero real shoes. OFF by default until enabled in .env.
+SHOE_GATE_ENABLED  = os.getenv("SHOE_GATE_ENABLED", "0") == "1"
+SHOE_GATE_MIN_CONF = float(os.getenv("SHOE_GATE_MIN_CONF", "0.10"))
 # Curated, training-ready subset (shoes_<color>_<make>_<N>.jpg + JSON) that the
 # auto-approved pairs are copied into — feeds the engine's catalog/training.
 # Defaults into the engine submodule's label_data dir.
