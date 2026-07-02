@@ -316,9 +316,15 @@ class EngineWorker:
                                   f"-> {st['make']}/{st['model']}", flush=True)
 
             # ---- Pass C: finalize each pair (color floor, auto-approve, label
-            # export) and build the rows for the single write transaction. ----
+            # export) and build the rows for the single write transaction.
+            # Non-shoes (shoeness gate) are DROPPED here: no DB row + not counted
+            # in num_pairs, so a blower/box never appears as an unknown pair. ----
+            dropped_nonshoe = 0
             for st in states:
                 idx, p = st["idx"], st["p"]
+                if not st["is_shoe"]:
+                    dropped_nonshoe += 1
+                    continue
                 color, color_c = st["color"], st["color_c"]
                 make, mk_c, model, md_c = st["make"], st["mk_c"], st["model"], st["md_c"]
                 source = st["source"]
@@ -381,11 +387,12 @@ class EngineWorker:
             conn.execute(
                 "UPDATE table_photos SET status = 'completed', num_pairs = ?, "
                 "processed_at = ?, error_message = NULL WHERE id = ?",
-                (len(pairs), now, tp_id),
+                (len(prepared), now, tp_id),   # count actual shoe pairs, not raw detections
             )
             conn.commit()
-            print(f"[worker] {tp_id}: {len(pairs)} pair(s) "
-                  f"({approved} auto-approved) -> completed.")
+            print(f"[worker] {tp_id}: {len(prepared)} shoe pair(s) "
+                  f"({approved} auto-approved, {dropped_nonshoe} non-shoe dropped) "
+                  f"-> completed.")
 
             # Stage 2 (best-effort, isolated so it can never flip the job to
             # 'failed'): attach the brand summary to the durable outbox row and
