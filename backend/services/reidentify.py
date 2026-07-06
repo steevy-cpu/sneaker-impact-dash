@@ -15,13 +15,15 @@ import json
 import threading
 from datetime import datetime
 
-from backend.config import PAIRS_DIR, AUTO_APPROVE_CONF
+from backend.config import PAIRS_DIR, AUTO_APPROVE_CONF, IDENTIFY_MIN_CONF
 from backend.database import get_connection
 from backend.services.airtable_outbox import set_brand_summary, try_one_async
 from backend.services.airtable_sync import brand_summary_from_pairs
 from backend.services.cloud_identify import cloud_enabled
 from backend.services.cloud_identify import identify as cloud_identify
-from backend.services.visual_search import lens_titles, visual_search_enabled
+from backend.services.visual_search import (lens_titles, title_consensus,
+                                            visual_search_enabled)
+from backend.utils.brands import canonical_brand
 from backend.services.label_export import export_label
 
 _lock = threading.Lock()
@@ -64,6 +66,25 @@ def _reidentify_one(conn, tp_id):
             res["source"] = res["source"] + "+lens"
         make, mk_c = res["brand"], res["brand_confidence"]
         model, md_c = res["model"], res["model_confidence"]
+
+        # DATA: log Google's title-consensus brand next to Gemini's, so we can
+        # later decide whether a strong consensus can skip the paid Gemini call.
+        if titles:
+            cbrand, cstr = title_consensus(titles)
+            gc = canonical_brand(res["brand"]); cc = canonical_brand(cbrand)
+            agree = bool(gc and cc and gc.lower() == cc.lower())
+            print(f"[reid] {r['id']}: lens-consensus={cbrand}({cstr:.0%}) "
+                  f"gemini={res['brand']}({mk_c}) -> {'AGREE' if agree else 'differ'}",
+                  flush=True)
+
+        # 60% confidence FLOOR: don't report a low-confidence guess as fact —
+        # set the field to "unknown" (stays PENDING, so a human can still label
+        # it). Per-field, so a confident brand survives a shaky model.
+        if not (isinstance(mk_c, (int, float)) and mk_c >= IDENTIFY_MIN_CONF):
+            make = "unknown"
+        if not (isinstance(md_c, (int, float)) and md_c >= IDENTIFY_MIN_CONF):
+            model = "unknown"
+
         # Color stays local unless it too was unknown — then take the cloud's.
         color, color_c = r["detected_color"], r["color_confidence"]
         if _is_unknown(color):
@@ -86,7 +107,9 @@ def _reidentify_one(conn, tp_id):
              model if confident else r["final_model"], r["id"]),
         )
         fname = (r["image_path"] or "").split("/")[-1]
-        if fname:
+        # Never export a gated-unknown to the training set (a <60% guess is not a
+        # label). Only known-brand+model rows feed label_data.
+        if fname and not _is_unknown(make) and not _is_unknown(model):
             export_label(str(PAIRS_DIR / fname), color=color, make=make, model=model,
                          make_conf=mk_c, model_conf=md_c, color_conf=color_c,
                          source_photo=tp_id, source_pair=r["id"],

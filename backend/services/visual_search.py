@@ -79,6 +79,41 @@ def _lens(url):
     return r.json()
 
 
+# Unambiguous sneaker-brand keywords for a title-consensus read (the "what does
+# Google think" signal, logged next to Gemini's answer). "On" is deliberately
+# omitted — too many false hits ("on sale"). Multi-word forms first.
+_BRAND_KEYWORDS = [
+    "new balance", "under armour", "hoka one one", "topo athletic", "la sportiva",
+    "golden goose", "xero shoes", "on running", "nike", "adidas", "hoka", "brooks",
+    "saucony", "asics", "mizuno", "altra", "reebok", "puma", "skechers", "salomon",
+    "merrell", "vans", "converse", "fila", "allbirds", "diadora", "jordan", "oofos",
+    "li-ning", "inov-8", "anta", "peak", "nobull", "ecco", "keen", "ryka", "avia",
+    "k-swiss", "crocs", "vivobarefoot",
+]
+
+
+def title_consensus(titles):
+    """Best-guess brand from the Lens titles + how strongly they agree.
+    Returns (brand_or_None, strength 0..1 = share of titles mentioning it).
+    A cheap, no-LLM read used ONLY for logging today — data to later decide if a
+    strong consensus can skip the paid Gemini call."""
+    import re
+    from collections import Counter
+    if not titles:
+        return None, 0.0
+    cnt = Counter()
+    for t in titles:
+        tl = (t or "").lower()
+        for b in _BRAND_KEYWORDS:
+            if re.search(r"\b" + re.escape(b) + r"\b", tl):
+                cnt[b] += 1
+                break                                    # one brand per title
+    if not cnt:
+        return None, 0.0
+    brand, n = cnt.most_common(1)[0]
+    return brand, n / len(titles)
+
+
 def lens_titles(crop_path):
     """Visual-match titles for one crop, deduped, capped. [] on any failure."""
     if not visual_search_enabled():

@@ -90,6 +90,12 @@ ENGINE_POLL_SECONDS  = float(os.getenv("ENGINE_POLL_SECONDS", "3"))   # worker p
 # Ollama model confidence is uncalibrated (~0.95 flat), so in practice this
 # gate is driven mostly by the make (CLIP) confidence.
 AUTO_APPROVE_CONF = float(os.getenv("AUTO_APPROVE_CONF", "0.80"))
+# Confidence FLOOR for reporting a cloud brand/model at all: below this we don't
+# store the guess as fact — the field is set to "unknown" (still PENDING, so a
+# human can label it). Prevents low-confidence guesses being reported as answers.
+# Three bands: >=AUTO_APPROVE_CONF auto-approve; IDENTIFY_MIN_CONF..AUTO_APPROVE
+# report + human review; <IDENTIFY_MIN_CONF -> unknown.
+IDENTIFY_MIN_CONF = float(os.getenv("IDENTIFY_MIN_CONF", "0.60"))
 # Minimum MAKE/brand confidence for a CLOUD prediction to be exported to
 # label_data. Local auto-approve already clears AUTO_APPROVE_CONF (0.80); cloud
 # answers previously had NO floor, so Gemini's calibrated-low guesses on
