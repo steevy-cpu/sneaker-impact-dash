@@ -211,6 +211,7 @@ def main():
                     color_veto=getattr(config, "SEGMENT_PAIR_COLOR_VETO", False),
                     color_conf_min=getattr(config, "SEGMENT_PAIR_COLOR_CONF_MIN", 0.35),
                     color_dist=getattr(config, "SEGMENT_PAIR_COLOR_DIST", 90.0),
+                    color_name_guard=getattr(config, "SEGMENT_PAIR_COLOR_NAME_GUARD", 0.0),
                     gap_outlier_k=getattr(config, "SEGMENT_PAIR_GAP_OUTLIER_K", 0.0),
                     gap_outlier_min=getattr(config, "SEGMENT_PAIR_GAP_OUTLIER_MIN", 4),
                     log=print,                          # stdout is redirected to stderr
