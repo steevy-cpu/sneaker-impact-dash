@@ -47,12 +47,16 @@ def _pending_by_table(conn):
     with _agg_lock:
         if _agg["rows"] is not None and (time.time() - _agg["ts"]) < _AGG_TTL:
             return _agg["rows"]
+        # `total` = ALL records for the table (pairs AND singles both need review),
+        # computed live — NOT tp.num_pairs, which now counts only true pairs.
         rows = conn.execute(
-            """SELECT tp.id, tp.image_path, tp.barcode, tp.num_pairs, tp.created_at,
-                      COUNT(p.id) AS pending
+            """SELECT tp.id, tp.image_path, tp.barcode, tp.created_at,
+                      COUNT(p.id) AS num_pairs,
+                      SUM(CASE WHEN p.review_status = 'PENDING' THEN 1 ELSE 0 END) AS pending
                FROM table_photos tp
-               JOIN pairs p ON p.table_photo_id = tp.id AND p.review_status = 'PENDING'
-               GROUP BY tp.id"""
+               JOIN pairs p ON p.table_photo_id = tp.id
+               GROUP BY tp.id
+               HAVING pending > 0"""
         ).fetchall()
         _agg["rows"] = [dict(r) for r in rows]
         _agg["ts"] = time.time()

@@ -125,13 +125,18 @@ async function openDetail(id) {
         </div>`;
     }).join("") || `<div class="empty-state">No pairs ${t.status === "completed" ? "detected" : "yet"}.</div>`;
 
+    // Count from the actual records so singles are never lumped into "pairs"
+    // (correct even for tables processed before the num_pairs fix).
+    const nTruePairs = (t.pairs || []).filter(p => p.pair_score != null).length;
+    const nSingles = (t.pairs || []).filter(p => p.pair_score == null).length;
+
     body.innerHTML = `
         ${photo}
         <div class="tp-meta">
             <div class="tp-kv"><span>Status</span><b>${statusBadge(t.status)}</b></div>
             <div class="tp-kv"><span>Barcode</span><b class="font-mono">${esc(t.barcode || "—")}</b></div>
             <div class="tp-kv"><span>Box</span><b>${boxSummary(t)}</b></div>
-            <div class="tp-kv"><span>Pairs</span><b>${t.num_pairs}</b></div>
+            <div class="tp-kv"><span>Pairs</span><b>${nTruePairs}${nSingles ? ` <span class="text-xs text-muted" style="font-weight:400;">+ ${nSingles} single${nSingles > 1 ? "s" : ""}</span>` : ""}</b></div>
             ${ship}
         </div>
         ${err}

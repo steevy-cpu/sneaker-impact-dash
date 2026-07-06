@@ -391,16 +391,19 @@ def delete_pair(pair_id: str, conn: sqlite3.Connection = Depends(get_db)):
     then recomputes the box's Airtable Brand Summary from the remaining pairs
     (a deleted YOLO false-positive must not keep inflating the brand counts)."""
     row = conn.execute(
-        "SELECT image_path, table_photo_id FROM pairs WHERE id = ?", (pair_id,)
+        "SELECT image_path, table_photo_id, pair_score FROM pairs WHERE id = ?", (pair_id,)
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail=f"Pair '{pair_id}' not found")
 
     conn.execute("DELETE FROM pairs WHERE id = ?", (pair_id,))
-    conn.execute(
-        "UPDATE table_photos SET num_pairs = MAX(0, num_pairs - 1) WHERE id = ?",
-        (row["table_photo_id"],),
-    )
+    # num_pairs counts TRUE pairs only — decrement solely when a pair (not a
+    # single-shoe record) is removed.
+    if row["pair_score"] is not None:
+        conn.execute(
+            "UPDATE table_photos SET num_pairs = MAX(0, num_pairs - 1) WHERE id = ?",
+            (row["table_photo_id"],),
+        )
     conn.commit()
     _gold_stats["data"] = None          # may have removed a gold pair → drop cache
 

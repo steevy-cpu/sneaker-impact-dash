@@ -384,13 +384,18 @@ class EngineWorker:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (pid, *values),
                 )
+            # num_pairs = TRUE pairs only (pair_score set); a single-shoe record
+            # (pair_score NULL) must NOT be counted as a pair. Index 3 of the
+            # prepared tuple is pair_score. Singles are tracked for display.
+            n_true_pairs = sum(1 for v in prepared if v[3] is not None)
+            n_singles = len(prepared) - n_true_pairs
             conn.execute(
                 "UPDATE table_photos SET status = 'completed', num_pairs = ?, "
                 "processed_at = ?, error_message = NULL WHERE id = ?",
-                (len(prepared), now, tp_id),   # count actual shoe pairs, not raw detections
+                (n_true_pairs, now, tp_id),
             )
             conn.commit()
-            print(f"[worker] {tp_id}: {len(prepared)} shoe pair(s) "
+            print(f"[worker] {tp_id}: {n_true_pairs} pair(s) + {n_singles} single(s) "
                   f"({approved} auto-approved, {dropped_nonshoe} non-shoe dropped) "
                   f"-> completed.")
 
