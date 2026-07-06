@@ -21,6 +21,7 @@ from backend.services.airtable_outbox import set_brand_summary, try_one_async
 from backend.services.airtable_sync import brand_summary_from_pairs
 from backend.services.cloud_identify import cloud_enabled
 from backend.services.cloud_identify import identify as cloud_identify
+from backend.services.visual_search import lens_titles, visual_search_enabled
 from backend.services.label_export import export_label
 
 _lock = threading.Lock()
@@ -54,9 +55,13 @@ def _reidentify_one(conn, tp_id):
         crop = _crop_path(r["image_path"])
         if not crop or not crop.exists():
             continue
-        res = cloud_identify(str(crop))
+        # Visual-search tier: Google Lens titles as extra evidence for Gemini.
+        titles = lens_titles(str(crop)) if visual_search_enabled() else []
+        res = cloud_identify(str(crop), lens_titles=titles or None)
         if not res:
             continue
+        if titles:
+            res["source"] = res["source"] + "+lens"
         make, mk_c = res["brand"], res["brand_confidence"]
         model, md_c = res["model"], res["model_confidence"]
         # Color stays local unless it too was unknown — then take the cloud's.

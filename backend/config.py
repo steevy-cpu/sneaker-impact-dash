@@ -146,6 +146,23 @@ CLOUD_IDENTIFY_ENABLED = (
     and bool(_CLOUD_KEYS.get(CLOUD_BACKEND))
 )
 
+# --- Visual search (Google Lens via Bright Data; crop hosted on CF Images) ----
+# For an unknown pair, host the crop on Cloudflare Images (public URL), run a
+# Google Lens reverse-image search through Bright Data (absorbs Google's
+# anti-bot wall — direct scraping from this server is blocked, verified
+# 2026-07-02), and feed the visual-match TITLES to Gemini as context. The old
+# desktop ShoeSort ran this exact chain. Costs ~$0.0015/Lens call + Images ops;
+# the hosted crop is DELETED right after the search (the old system once hit
+# its Images quota). OFF by default; piloted in /reidentify first.
+VISUAL_SEARCH_ENABLED = os.getenv("VISUAL_SEARCH_ENABLED", "0") not in (
+    "0", "false", "False")
+CF_IMAGES_ACCOUNT_ID  = os.getenv("ACCOUNT_CLOUDFLARE_ID", "")
+CF_IMAGES_TOKEN       = os.getenv("CLOUDFLARE_API_TOKEN", "")
+BRIGHTDATA_BEARER     = os.getenv("BRIGHTDATA_BEARER_TOKEN", "")
+BRIGHTDATA_ZONE       = os.getenv("BRIGHTDATA_ZONE", "")
+VISUAL_SEARCH_TIMEOUT = int(os.getenv("VISUAL_SEARCH_TIMEOUT", "150"))  # Lens ~40s typical
+VISUAL_SEARCH_MAX_TITLES = int(os.getenv("VISUAL_SEARCH_MAX_TITLES", "20"))
+
 # --- Seen-shoe cache (Tier 0: reuse a past identification before paying cloud) -
 # Before the cloud fallback, the worker looks up an uncertain pair's DINOv2
 # embedding against `shoe_memory` (past resolved shoes). A confident neighbour

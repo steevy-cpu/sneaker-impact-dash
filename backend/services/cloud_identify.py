@@ -68,14 +68,29 @@ def _clamp01(v):
         return None
 
 
-def _gemini(crop_path):
+def _lens_context(titles):
+    """Prompt block carrying Google Lens visual-match titles. The titles are
+    web-page names of visually similar products — strong evidence, but noisy
+    (marketplace listings mix sizes/colors/wrong models), so the model is told
+    to weigh them against what it SEES, not follow them blindly."""
+    lines = "\n".join(f"- {t}" for t in titles)
+    return (
+        "\nADDITIONAL EVIDENCE — a Google Lens reverse-image search on this "
+        "exact photo returned these visually-similar product titles (noisy web "
+        "listings; use them as strong hints for brand/model, but only when "
+        "consistent with what you actually see in the image):\n" + lines + "\n"
+    )
+
+
+def _gemini(crop_path, lens_titles=None):
     """One Gemini generateContent call on the crop. Returns parsed dict or None."""
     with open(crop_path, "rb") as fh:
         b64 = base64.b64encode(fh.read()).decode("ascii")
+    prompt = _PROMPT + (_lens_context(lens_titles) if lens_titles else "")
     body = {
         "contents": [{
             "parts": [
-                {"text": _PROMPT},
+                {"text": prompt},
                 {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
             ],
         }],
@@ -161,13 +176,15 @@ def _openai(crop_path):
             raise
 
 
-def identify(crop_path):
-    """Cloud-identify one shoe crop. Returns a normalized dict or None."""
+def identify(crop_path, lens_titles=None):
+    """Cloud-identify one shoe crop. Returns a normalized dict or None.
+    `lens_titles` (optional): Google Lens visual-match titles to give the model
+    as extra brand/model evidence (gemini backend only)."""
     if not cloud_enabled():
         return None
     try:
         if CLOUD_BACKEND == "gemini":
-            raw = _gemini(crop_path)
+            raw = _gemini(crop_path, lens_titles=lens_titles)
         elif CLOUD_BACKEND == "openai":
             raw = _openai(crop_path)
         else:
