@@ -77,13 +77,15 @@ def _reidentify_one(conn, tp_id):
                   f"gemini={res['brand']}({mk_c}) -> {'AGREE' if agree else 'differ'}",
                   flush=True)
 
-        # 60% confidence FLOOR: don't report a low-confidence guess as fact —
-        # set the field to "unknown" (stays PENDING, so a human can still label
-        # it). Per-field, so a confident brand survives a shaky model.
-        if not (isinstance(mk_c, (int, float)) and mk_c >= IDENTIFY_MIN_CONF):
-            make = "unknown"
-        if not (isinstance(md_c, (int, float)) and md_c >= IDENTIFY_MIN_CONF):
-            model = "unknown"
+        # 60% confidence FLOOR (only in the visual-search flow — Lens is what
+        # lifts confidence above it; without Lens this would just unknown-out the
+        # low-confidence fills this backfill exists to produce). Per-field, so a
+        # confident brand survives a shaky model. Stays PENDING for a human.
+        if visual_search_enabled():
+            if not (isinstance(mk_c, (int, float)) and mk_c >= IDENTIFY_MIN_CONF):
+                make = "unknown"
+            if not (isinstance(md_c, (int, float)) and md_c >= IDENTIFY_MIN_CONF):
+                model = "unknown"
 
         # Color stays local unless it too was unknown — then take the cloud's.
         color, color_c = r["detected_color"], r["color_confidence"]

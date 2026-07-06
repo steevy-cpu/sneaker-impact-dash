@@ -66,17 +66,24 @@ def _cf_delete(img_id):
 
 
 def _lens(url):
-    """Bright Data -> Google Lens on a public image URL. Returns parsed dict."""
+    """Bright Data -> Google Lens on a public image URL. Returns parsed dict.
+    Bright Data intermittently returns a non-JSON/empty body (~20% in testing),
+    so retry once on a JSON-decode failure before giving up."""
     lens_url = (f"https://lens.google.com/uploadbyurl"
                 f"?url={urllib.parse.quote(url, safe='')}&brd_json=html")
-    r = requests.post(
-        _BD_URL,
-        headers={"Authorization": f"Bearer {BRIGHTDATA_BEARER}",
-                 "Content-Type": "application/json"},
-        json={"zone": BRIGHTDATA_ZONE, "url": lens_url, "format": "raw"},
-        timeout=VISUAL_SEARCH_TIMEOUT)
-    r.raise_for_status()
-    return r.json()
+    payload = {"zone": BRIGHTDATA_ZONE, "url": lens_url, "format": "raw"}
+    headers = {"Authorization": f"Bearer {BRIGHTDATA_BEARER}",
+               "Content-Type": "application/json"}
+    last = None
+    for attempt in range(2):
+        r = requests.post(_BD_URL, headers=headers, json=payload,
+                          timeout=VISUAL_SEARCH_TIMEOUT)
+        r.raise_for_status()
+        try:
+            return r.json()
+        except ValueError as exc:                       # non-JSON body → retry once
+            last = exc
+    raise last
 
 
 # Unambiguous sneaker-brand keywords for a title-consensus read (the "what does

@@ -23,13 +23,38 @@ from backend.config import (ENGINE_ENABLED, ENGINE_JOB_TIMEOUT,
                             SEEN_SHOE_MIN_SIM, SEEN_SHOE_TOP_K, SEEN_SHOE_MIN_AGREE,
                             SEEN_SHOE_DEDUP_SIM, SEEN_SHOE_MAX_ROWS,
                             SEEN_SHOE_WRITEBACK_CONF,
-                            SEEN_SHOE_WRITEBACK_MODEL_CONF)
+                            SEEN_SHOE_WRITEBACK_MODEL_CONF, IDENTIFY_MIN_CONF)
 from backend.database import get_connection
 from backend.services import shoe_memory
 from backend.services.cloud_identify import cloud_enabled
 from backend.services.cloud_identify import identify as cloud_identify
 from backend.services.label_export import export_label
 from backend.services.pipeline import process_table_photo
+from backend.services.visual_search import lens_titles, visual_search_enabled
+
+
+def _cloud_identify_tiered(crop_path):
+    """Cloud identify with the optional visual-search tier + confidence gate.
+    When VISUAL_SEARCH_ENABLED is on: run a Google Lens search first and pass the
+    titles to Gemini, tag the source '+lens', and apply the IDENTIFY_MIN_CONF
+    floor (a field below it becomes 'unknown' — not reported as fact). When off,
+    this is identical to a plain cloud_identify() (live behaviour unchanged).
+    Runs inside a worker thread (Lens + Gemini are network I/O)."""
+    use_lens = visual_search_enabled()
+    titles = lens_titles(crop_path) if use_lens else []
+    res = cloud_identify(crop_path, lens_titles=titles or None)
+    if not res:
+        return None
+    if titles:
+        res["source"] = res["source"] + "+lens"
+    if use_lens:                                         # 60% floor, new flow only
+        if not (isinstance(res["brand_confidence"], (int, float))
+                and res["brand_confidence"] >= IDENTIFY_MIN_CONF):
+            res["brand"] = "unknown"
+        if not (isinstance(res["model_confidence"], (int, float))
+                and res["model_confidence"] >= IDENTIFY_MIN_CONF):
+            res["model"] = "unknown"
+    return res
 from backend.utils.id_generator import generate_pair_id
 
 
@@ -268,7 +293,7 @@ class EngineWorker:
                 _heartbeat()
                 workers = max(1, min(CLOUD_CONCURRENCY, len(cloud_states)))
                 with ThreadPoolExecutor(max_workers=workers) as ex:
-                    futs = {ex.submit(cloud_identify,
+                    futs = {ex.submit(_cloud_identify_tiered,
                                       str(PAIRS_DIR / st["img_file"])): st
                             for st in cloud_states}
                     for fut in as_completed(futs):
