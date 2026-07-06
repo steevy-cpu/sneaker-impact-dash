@@ -38,6 +38,13 @@
     const uploadBtn = document.getElementById("upload-btn");
     const fileInput = document.getElementById("file-input");
     const learnBtn = document.getElementById("learn-btn");
+    const dupModal = document.getElementById("dup-modal");
+    const dupModalBody = document.getElementById("dup-modal-body");
+    const dupCancelBtn = document.getElementById("dup-cancel");
+    const dupOverwriteBtn = document.getElementById("dup-overwrite");
+    const buzzVolume = document.getElementById("buzz-volume");
+    const buzzVolumeLabel = document.getElementById("buzz-volume-label");
+    const buzzTestBtn = document.getElementById("buzz-test");
 
     let stream = null;
     let uploadedBlob = null;     // set only by the upload fallback
@@ -45,6 +52,9 @@
     let busy = false;
     let learning = false;
     let lastLookup = "";
+    let overwriteOf = null;      // previous entry id to replace on send (duplicate label)
+    let dupModalOpen = false;
+    let audioCtx = null;         // lazy — created on the first buzz (a user gesture)
 
     /* ---- Camera --------------------------------------------------------- */
 
@@ -91,7 +101,7 @@
         capWeight.value = ""; capGood.value = ""; capEol.value = ""; capCasuals.value = "";
         barcodeInput.value = "";
         barcodeStatus.textContent = "Ready for barcode scanning…";
-        shipmentPreview.style.display = "none"; lastLookup = "";
+        shipmentPreview.style.display = "none"; lastLookup = ""; overwriteOf = null;
         uploadedBlob = null; fileInput.value = "";
         stage.classList.remove("frozen"); frozenBadge.style.display = "none"; frozen.removeAttribute("src");
     }
@@ -131,12 +141,29 @@
         fd.append("total_end_of_life", String(d.eol));
         fd.append("casuals", String(d.casuals));
         fd.append("operator_id", OPERATOR_ID);
+        if (overwriteOf) fd.append("overwrite_of", overwriteOf);
         try {
             const res = await api.captureTablePhoto(fd);
             showToast("✅ QUEUED — " + res.id, "success", 2600);
             resetFields();
             barcodeInput.focus();
         } catch (err) {
+            // Duplicate-label backstop: the server refused the capture because
+            // this barcode already exists (typed without Enter, scan-check
+            // missed, or another station won a race). Same buzz + modal as a
+            // scan-time hit; OVERWRITE re-sends with overwrite_of.
+            if (err.status === 409 && err.detail && err.detail.code === "duplicate_barcode") {
+                playBuzz();
+                showDupModal(err.detail.existing, err.detail.match_count, {
+                    onOverwrite: () => {
+                        overwriteOf = err.detail.existing.id;
+                        lastCaptureAt = 0;          // bypass the debounce for the resend
+                        fullSend();
+                    },
+                    onCancel: () => { stage.classList.remove("frozen"); frozenBadge.style.display = "none"; },
+                });
+                return;
+            }
             showToast(err.message || "Capture failed", "error", 3200);
             stage.classList.remove("frozen"); frozenBadge.style.display = "none";
         } finally {
@@ -177,14 +204,133 @@
             }
         } catch (err) { shipmentPreview.style.display = "none"; }
     }
+    /* ---- Duplicate-label guard (buzz + overwrite/cancel modal) ----------- */
+
+    // Alert volume: per-station (localStorage), 0-100%. 50% == the original
+    // fixed gain of 0.25; 100% doubles it. 0% mutes the buzz (modal still shows).
+    const VOLUME_KEY = "dup_buzz_volume";
+    function getBuzzVolume() {
+        const v = parseInt(localStorage.getItem(VOLUME_KEY), 10);
+        return Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 50;
+    }
+    function refreshVolumeUI() {
+        const v = getBuzzVolume();
+        buzzVolume.value = v; buzzVolumeLabel.textContent = v + "%";
+    }
+    buzzVolume.addEventListener("input", () => {
+        localStorage.setItem(VOLUME_KEY, buzzVolume.value);
+        buzzVolumeLabel.textContent = buzzVolume.value + "%";
+    });
+    buzzVolume.addEventListener("change", () => playBuzz());  // hear the level you just set
+    buzzTestBtn.addEventListener("click", () => playBuzz());
+
+    // Double error-buzz via Web Audio — no asset file needed. Best-effort: the
+    // scanner's Enter keydown is a user gesture, so the AudioContext may start.
+    function playBuzz() {
+        try {
+            const gain = (getBuzzVolume() / 100) * 0.5;
+            if (gain <= 0) return;                     // muted — the modal still shows
+            audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === "suspended") audioCtx.resume();
+            const t0 = audioCtx.currentTime;
+            [0, 0.22].forEach((off) => {
+                const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+                osc.type = "square"; osc.frequency.value = 220;
+                g.gain.setValueAtTime(gain, t0 + off);
+                g.gain.exponentialRampToValueAtTime(0.001, t0 + off + 0.15);
+                osc.connect(g); g.connect(audioCtx.destination);
+                osc.start(t0 + off); osc.stop(t0 + off + 0.16);
+            });
+        } catch (e) { /* audio is best-effort — the modal still shows */ }
+    }
+
+    let dupHandlers = null;     // {onOverwrite, onCancel} for the open modal
+
+    function showDupModal(existing, matchCount, handlers) {
+        dupHandlers = handlers;
+        const bits = [];
+        if (existing.weight_of_box != null) bits.push(existing.weight_of_box + " lbs");
+        if (existing.total_good_sneakers) bits.push(existing.total_good_sneakers + " good");
+        if (existing.total_end_of_life) bits.push(existing.total_end_of_life + " EOL");
+        if (existing.casuals) bits.push(existing.casuals + " casuals");
+        if (existing.num_pairs) bits.push(existing.num_pairs + " pairs");
+        dupModalBody.innerHTML =
+            '<p style="margin:0 0 10px;">This label was already captured as ' +
+            "<strong>" + existing.id + "</strong> (" + formatDate(existing.created_at) +
+            (existing.status ? " · " + existing.status : "") + ").</p>" +
+            (bits.length ? '<p style="margin:0 0 10px;">Previous box data: ' + bits.join(" · ") + "</p>" : "") +
+            (matchCount > 1
+                ? '<p style="margin:0 0 10px;">(+' + (matchCount - 1) + " older entr" +
+                  (matchCount - 1 === 1 ? "y" : "ies") + " with this label)</p>" : "") +
+            '<p style="margin:0; color:var(--text-muted); font-size:var(--text-sm);">' +
+            "OVERWRITE deletes that entry (photo + pairs) and replaces it with this capture. " +
+            "Cancel clears the barcode.</p>";
+        dupModalOpen = true;
+        dupModal.classList.add("open");
+        dupModal.focus();       // focus the overlay, NOT a button — Space can't press anything
+    }
+
+    function closeDupModal() {
+        dupModalOpen = false; dupHandlers = null;
+        dupModal.classList.remove("open");
+    }
+
+    // Shared cancel path: forget the scan entirely and return to a clean field.
+    function dupCancel() {
+        const h = dupHandlers;
+        closeDupModal();
+        barcodeInput.value = ""; overwriteOf = null; lastLookup = "";
+        shipmentPreview.style.display = "none";
+        barcodeStatus.textContent = "Ready for barcode scanning…";
+        barcodeInput.focus();
+        if (h && h.onCancel) h.onCancel();
+    }
+    function dupOverwrite() {
+        const h = dupHandlers;
+        closeDupModal();
+        if (h && h.onOverwrite) h.onOverwrite();
+    }
+    dupCancelBtn.addEventListener("click", dupCancel);
+    dupOverwriteBtn.addEventListener("click", dupOverwrite);
+
+    // Keyboard safety while the modal is open: a scanner re-scan ends in Enter,
+    // so Enter is swallowed ENTIRELY (overwrite is click-only); Escape cancels.
+    document.addEventListener("keydown", (e) => {
+        if (!dupModalOpen) return;
+        if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); return; }
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); dupCancel(); }
+    }, true);
+
+    // Scan-time duplicate check — fire-and-forget so it never delays the flow;
+    // a failed check is harmless (the server's 409 backstop still protects).
+    async function checkDuplicate(code) {
+        try {
+            const r = await api.checkBarcode(code);
+            if (!r.duplicate) return;
+            // Stale guard: the field changed (new scan/cleared) while we waited.
+            if (barcodeInput.value.trim() !== code || dupModalOpen) return;
+            playBuzz();
+            showDupModal(r.matches[0], r.matches.length, {
+                onOverwrite: () => {
+                    overwriteOf = r.matches[0].id;
+                    showToast("Will OVERWRITE " + r.matches[0].id + " on send", "info", 2600);
+                    capWeight.focus();
+                },
+                onCancel: () => {},
+            });
+        } catch (e) { /* never block scanning on a failed check */ }
+    }
+
     barcodeInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
             e.preventDefault();
+            if (dupModalOpen) return;          // double-scan while the modal is up
             const code = barcodeInput.value.trim();
             if (code.length >= 4) {
                 barcodeStatus.textContent = "Scanned: " + code;
                 showToast("BARCODE SCANNED: " + code, "barcode", 1500);
                 lookupShipment(code);
+                checkDuplicate(code);
                 capWeight.focus();         // after a scan, jump straight to Weight; Enter/Tab walks the rest
             } else {
                 barcodeStatus.textContent = "Barcode too short (min 4 chars)";
@@ -194,6 +340,7 @@
     barcodeInput.addEventListener("input", () => {
         const code = barcodeInput.value.trim();
         barcodeStatus.textContent = code ? "Barcode: " + code : "Ready for barcode scanning…";
+        overwriteOf = null;                    // a pending overwrite dies with a changed code
         if (!code) { shipmentPreview.style.display = "none"; lastLookup = ""; }
     });
     barcodeInput.addEventListener("blur", () => lookupShipment(barcodeInput.value.trim()));
@@ -225,6 +372,7 @@
     });
 
     window.addEventListener("keydown", (e) => {
+        if (dupModalOpen) return;   // no trigger/learning while the duplicate modal is up
         if (learning) {
             if (MODIFIERS.includes(e.code)) return;      // ignore a held modifier
             e.preventDefault();
@@ -246,6 +394,7 @@
     }, true);
 
     window.addEventListener("mousedown", (e) => {
+        if (dupModalOpen) return;   // modal buttons are plain left-clicks; no trigger can fire
         if (learning) {
             if (e.button === 0) {
                 showToast("That's a normal left-click — the button likely sends a key. Try again.", "error", 3800);
@@ -274,7 +423,7 @@
     const BOX_ORDER = [capWeight, capGood, capEol, capCasuals];
     BOX_ORDER.forEach((el, i) => {
         el.addEventListener("keydown", (e) => {
-            if (e.key !== "Enter") return;     // Tab is handled natively by the browser
+            if (e.key !== "Enter" || dupModalOpen) return;   // Tab is handled natively by the browser
             e.preventDefault();
             const next = BOX_ORDER[i + 1];
             if (next) next.focus();
@@ -291,5 +440,6 @@
     window.addEventListener("beforeunload", () => { if (stream) stream.getTracks().forEach(t => t.stop()); });
 
     refreshHint();
+    refreshVolumeUI();
     startCamera();
 })();

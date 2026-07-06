@@ -118,6 +118,49 @@ def _clean_barcode(barcode):
     return bc
 
 
+# A worker re-scanning a label they already captured is almost always a mistake
+# (FedEx tracking numbers are unique per package) — and two rows with the same
+# barcode double-write the same Airtable shipment record. Codes shorter than
+# this never flag (matches the frontend's min-scan length), so blank/test scans
+# can never collide with each other.
+MIN_DUP_BARCODE_LEN = 4
+
+
+def _find_duplicates(conn, cleaned_barcode):
+    """All existing table_photos with this exact cleaned barcode, newest first.
+    Empty list for None/''/len<4. One indexed SELECT (idx_table_photos_barcode)."""
+    if not cleaned_barcode or len(cleaned_barcode) < MIN_DUP_BARCODE_LEN:
+        return []
+    rows = conn.execute(
+        """SELECT id, created_at, weight_of_box, total_good_sneakers,
+                  total_end_of_life, casuals, status, num_pairs
+           FROM table_photos WHERE barcode = ?
+           ORDER BY created_at DESC, id DESC""", (cleaned_barcode,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _duplicate_409(barcode, dups) -> HTTPException:
+    """The dict-shaped detail lets the frontend key off code=='duplicate_barcode'
+    and show the previous entry in the overwrite/cancel modal."""
+    return HTTPException(status_code=409, detail={
+        "code": "duplicate_barcode",
+        "message": f"Label {barcode} already scanned as {dups[0]['id']}",
+        "existing": dups[0],
+        "match_count": len(dups),
+    })
+
+
+def _overwrite_previous(conn, overwrite_of, barcode):
+    """Deferred overwrite: called AFTER the new row is inserted, so a failed
+    capture can never lose the previous entry. Deletes the old row only if it
+    still exists AND carries the same (cleaned) barcode — a stale or mismatched
+    id is ignored silently and the new capture still succeeds."""
+    old = conn.execute("SELECT barcode FROM table_photos WHERE id = ?",
+                       (overwrite_of,)).fetchone()
+    if old and _clean_barcode(old["barcode"]) == barcode:
+        _delete_table_photo_cascade(conn, overwrite_of)
+
+
 def _has_box_data(good, eol, casuals, weight) -> bool:
     """Mirror the desktop rule: at least one box field must be > 0."""
     return any([(good or 0) > 0, (eol or 0) > 0, (casuals or 0) > 0, (weight or 0) > 0])
@@ -170,6 +213,17 @@ def _enqueue_outbox(conn, tp_id, barcode, box):
 # Create
 # ---------------------------------------------------------------------------
 
+@router.get("/barcode-check/{barcode}", summary="Is this barcode already captured?")
+def barcode_check(barcode: str, conn: sqlite3.Connection = Depends(get_db)):
+    """Scan-time duplicate lookup for the Capture page: called on every barcode
+    Enter so the worker hears the buzz BEFORE photographing. Always 200 — a
+    weird input just returns duplicate=false; this check must never be able to
+    block scanning."""
+    bc = _clean_barcode(barcode)
+    matches = _find_duplicates(conn, bc)
+    return {"barcode": bc, "duplicate": bool(matches), "matches": matches}
+
+
 @router.post("/metadata", status_code=201, summary="Fast-track box metadata (no image yet)")
 def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get_db)):
     """Create a `table_photos` record from box metadata + barcode ahead of (or
@@ -183,12 +237,18 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
             status_code=422,
             detail="At least one box field (good / end-of-life / casuals / weight) must be > 0",
         )
+    if not data.overwrite_of:
+        dups = _find_duplicates(conn, barcode)
+        if dups:
+            raise _duplicate_409(barcode, dups)
     tp_id = generate_table_photo_id(conn)
     _insert_table_photo(
         conn, tp_id, operator_id=data.operator_id, batch_id=data.batch_id,
         image_path=None, barcode=barcode, weight=weight,
         good=data.total_good_sneakers, eol=data.total_end_of_life, casuals=data.casuals,
     )
+    if data.overwrite_of:
+        _overwrite_previous(conn, data.overwrite_of, barcode)
     _attach_shipment(conn, tp_id, barcode)
     _enqueue_outbox(conn, tp_id, barcode, {"weight": weight,
                                                 "good": data.total_good_sneakers,
@@ -208,11 +268,14 @@ async def capture(
     casuals:             int             = Form(0),
     operator_id:         Optional[str]   = Form(None),
     batch_id:            Optional[str]   = Form(None),
+    overwrite_of:        Optional[str]   = Form(None),
     conn:                sqlite3.Connection = Depends(get_db),
 ):
     """Store one whole-table photo + box metadata as a `pending` table_photos
     row, ready for background processing (the worker arrives in P3). Validation:
-    a readable image AND at least one box field > 0."""
+    a readable image AND at least one box field > 0. A duplicate barcode is
+    refused with 409 unless `overwrite_of` names the previous entry to replace
+    (the frontend's overwrite/cancel modal drives that)."""
     weight_of_box = _clean_weight(weight_of_box)
     barcode = _clean_barcode(barcode)
     if not _has_box_data(total_good_sneakers, total_end_of_life, casuals, weight_of_box):
@@ -220,6 +283,12 @@ async def capture(
             status_code=422,
             detail="At least one box field (good / end-of-life / casuals / weight) must be > 0",
         )
+    # Duplicate backstop BEFORE any Pillow work — a refused duplicate submit is
+    # one indexed SELECT, cheaper than a normal capture, never a slowdown.
+    if not overwrite_of:
+        dups = _find_duplicates(conn, barcode)
+        if dups:
+            raise _duplicate_409(barcode, dups)
 
     raw = await image.read()
     if not raw:
@@ -259,6 +328,10 @@ async def capture(
         image_path=get_table_photo_url(tp_id), barcode=barcode, weight=weight_of_box,
         good=total_good_sneakers, eol=total_end_of_life, casuals=casuals,
     )
+    # New row is in — NOW replace the previous entry (its outbox row dies in the
+    # cascade; the fresh _enqueue_outbox below re-syncs the new box data).
+    if overwrite_of:
+        _overwrite_previous(conn, overwrite_of, barcode)
     # The shipment lookup is a blocking Airtable call (up to 8s) — threadpool
     # it for the same reason as the Pillow work above.
     await run_in_threadpool(_attach_shipment, conn, tp_id, barcode)
@@ -365,19 +438,20 @@ def reprocess_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)
     return {"id": tp_id, "status": "pending"}
 
 
-@router.delete("/table-photos/{tp_id}",
-               summary="Delete a table photo, its pairs, crops, and outbox row")
-def delete_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)):
+def _delete_table_photo_cascade(conn, tp_id: str):
     """Permanently remove a table photo and everything tied to it: every child
     pair row (+ crop files), the durable Airtable outbox row (so an orphaned
     sync can't keep retrying), the table-photo DB row, and the photo file on
     disk. No FK has ON DELETE CASCADE, so cleanup is explicit and ordered:
-    children first, then the outbox, then the parent."""
+    children first, then the outbox, then the parent.
+
+    Returns {'pairs_removed': n} or None if the row doesn't exist (no raise —
+    the overwrite path treats an already-gone target as a silent no-op)."""
     row = conn.execute(
         "SELECT id, image_path FROM table_photos WHERE id = ?", (tp_id,)
     ).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail=f"Table photo '{tp_id}' not found")
+        return None
 
     pair_rows = conn.execute(
         "SELECT image_path FROM pairs WHERE table_photo_id = ?", (tp_id,)
@@ -397,4 +471,13 @@ def delete_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)):
                 (IMAGES_DIR / path.replace("/images/", "", 1)).unlink()
             except OSError:
                 pass
-    return {"deleted": True, "id": tp_id, "pairs_removed": len(pair_rows)}
+    return {"pairs_removed": len(pair_rows)}
+
+
+@router.delete("/table-photos/{tp_id}",
+               summary="Delete a table photo, its pairs, crops, and outbox row")
+def delete_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)):
+    result = _delete_table_photo_cascade(conn, tp_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Table photo '{tp_id}' not found")
+    return {"deleted": True, "id": tp_id, "pairs_removed": result["pairs_removed"]}

@@ -111,6 +111,7 @@ class MetadataCreate(BaseModel):
     casuals:             int             = 0
     operator_id:         Optional[str]   = None
     batch_id:            Optional[str]   = None
+    overwrite_of:        Optional[str]   = None  # table_photos.id to replace on a duplicate barcode
 
 
 class TablePhotoResponse(BaseModel):

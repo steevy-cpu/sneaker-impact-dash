@@ -209,6 +209,7 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_table_photos_status  ON table_photos(status);
         CREATE INDEX IF NOT EXISTS idx_table_photos_created ON table_photos(created_at);
+        CREATE INDEX IF NOT EXISTS idx_table_photos_barcode ON table_photos(barcode);
         CREATE INDEX IF NOT EXISTS idx_pairs_table_photo    ON pairs(table_photo_id);
         CREATE INDEX IF NOT EXISTS idx_pairs_review         ON pairs(review_status);
         CREATE INDEX IF NOT EXISTS idx_outbox_status        ON airtable_outbox(status);

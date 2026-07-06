@@ -16,15 +16,22 @@ async function apiFetch(path, options = {}) {
 
     if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        // FastAPI validation errors return detail as an array of objects.
-        // All other errors return detail as a plain string.
+        // FastAPI validation errors return detail as an array of objects,
+        // most errors return a plain string, and the duplicate-barcode 409
+        // returns an object — surface a readable message for all three, and
+        // attach status/detail so callers can recognize specific errors.
         let message;
         if (Array.isArray(body.detail)) {
             message = body.detail.map(e => e.msg || JSON.stringify(e)).join("; ");
+        } else if (body.detail && typeof body.detail === "object") {
+            message = body.detail.message || JSON.stringify(body.detail);
         } else {
             message = body.detail || `Server error ${res.status}`;
         }
-        throw new Error(message);
+        const err = new Error(message);
+        err.status = res.status;
+        err.detail = body.detail;
+        throw err;
     }
 
     return res.json();
@@ -41,10 +48,15 @@ async function apiUpload(path, formData) {
         let message;
         if (Array.isArray(body.detail)) {
             message = body.detail.map(e => e.msg || JSON.stringify(e)).join("; ");
+        } else if (body.detail && typeof body.detail === "object") {
+            message = body.detail.message || JSON.stringify(body.detail);
         } else {
             message = body.detail || `Server error ${res.status}`;
         }
-        throw new Error(message);
+        const err = new Error(message);
+        err.status = res.status;
+        err.detail = body.detail;
+        throw err;
     }
     return res.json();
 }
@@ -307,6 +319,11 @@ const api = {
     /** Resolve a scanned barcode to shipment/order info (Airtable now). */
     getShipment(barcode) {
         return apiFetch(`/api/shipment/${encodeURIComponent(barcode)}`);
+    },
+
+    /** Has this barcode already been captured? -> {barcode, duplicate, matches}. */
+    checkBarcode(code) {
+        return apiFetch(`/api/barcode-check/${encodeURIComponent(code)}`);
     },
 
     /* ---- Config tab (station config + v4l2 camera control) -------------- */
