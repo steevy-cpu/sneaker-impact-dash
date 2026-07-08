@@ -212,6 +212,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_table_photos_barcode ON table_photos(barcode);
         CREATE INDEX IF NOT EXISTS idx_pairs_table_photo    ON pairs(table_photo_id);
         CREATE INDEX IF NOT EXISTS idx_pairs_review         ON pairs(review_status);
+        CREATE INDEX IF NOT EXISTS idx_pairs_created        ON pairs(created_at);
         CREATE INDEX IF NOT EXISTS idx_outbox_status        ON airtable_outbox(status);
         CREATE INDEX IF NOT EXISTS idx_shoe_memory_embedder ON shoe_memory(embedder);
         CREATE INDEX IF NOT EXISTS idx_shoe_memory_brand    ON shoe_memory(brand);
@@ -232,6 +233,10 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
         ("pairs", "final_color", "TEXT"),         # human-confirmed color (gold-label workflow)
         ("pairs", "label_action", "TEXT"),        # 'confirmed' (kept AI label) | 'corrected'
                                                   # (human changed it) — a free AI-accuracy meter
+        ("pairs", "sample_mode", "TEXT"),         # how this human review was sampled:
+                                                  # 'value' (mid-conf queue) | 'random' (blind
+                                                  # audit card) | NULL (legacy/biased) — only
+                                                  # 'random' rows give unbiased accuracy stats
         ("table_photos", "claimed_at", "TEXT"),   # when a worker claimed the job; lets the
                                                   # stale sweeper re-queue orphaned 'processing' rows
         ("table_photos", "label_claimed_by", "TEXT"),  # multi-worker gold labeling: who is

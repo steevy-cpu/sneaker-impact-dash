@@ -8,20 +8,22 @@ review workflow now applies here, at the pair level.
 import csv
 import io
 import json
+import random
 import sqlite3
 import threading
 import time
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from backend.config import IMAGES_DIR
+from backend.config import AUDIT_WINDOW_DAYS, IMAGES_DIR
 from backend.database import get_db
 from backend.models import PairReviewUpdate
 from backend.utils.brands import canonical_brand
 from backend.utils.models import clean_model, model_key
+from backend.utils.sources import source_family
 
 router = APIRouter(prefix="/api/pairs", tags=["Pairs"])
 
@@ -64,6 +66,7 @@ def pair_to_dict(row: sqlite3.Row) -> dict:
         "final_model":      row["final_model"],
         "final_color":      row["final_color"] if "final_color" in row.keys() else None,
         "label_action":     row["label_action"] if "label_action" in row.keys() else None,
+        "sample_mode":      row["sample_mode"] if "sample_mode" in row.keys() else None,
         "notes":            row["notes"],
         "created_at":       row["created_at"],
     }
@@ -139,6 +142,56 @@ def gold_queue(
     return {"total_pending": total, "items": [pair_to_dict(r) for r in ordered]}
 
 
+@router.get("/audit-sample", summary="Random unreviewed pairs for blind accuracy audit")
+def audit_sample(
+    limit:      int = Query(5, ge=1, le=20),
+    exclude_tp: Optional[str] = Query(None, description="table_photo_id to skip (the deck being labeled)"),
+    conn:       sqlite3.Connection = Depends(get_db),
+):
+    """Draw audit cards for Quick Label: pairs no human has touched yet, from
+    the last AUDIT_WINDOW_DAYS, REGARDLESS of review_status — the auto-trusted
+    NOT_REQUIRED tiers (seen-shoe cache, confident cloud) must be audited too,
+    they flow into training and Airtable with zero human eyes otherwise.
+
+    STRATIFIED: uniform-random within each prediction-source family, round-robin
+    across families, so low-volume tiers reach a useful sample size as fast as
+    the busy ones while every per-family confirm-rate stays unbiased. Pairs
+    with no real brand claim are excluded (the audit measures assertion
+    precision; the unknown-rate is tracked elsewhere).
+
+    Always 200 with {items:[...]}; empty on odd input. Read-only single indexed
+    window scan (idx_pairs_created) — cannot slow the live site."""
+    since = (datetime.now() - timedelta(days=AUDIT_WINDOW_DAYS)).isoformat()
+    q = ("SELECT id, prediction_source FROM pairs "
+         "WHERE label_action IS NULL AND created_at >= ? "
+         "AND LOWER(COALESCE(make,'')) NOT IN ('', 'unknown')")
+    params = [since]
+    if exclude_tp:
+        q += " AND table_photo_id != ?"; params.append(exclude_tp)
+    pool = conn.execute(q, params).fetchall()
+
+    families = {}
+    for r in pool:
+        families.setdefault(source_family(r["prediction_source"]), []).append(r["id"])
+    for ids in families.values():
+        random.shuffle(ids)
+    chosen, queues = [], list(families.values())
+    while queues and len(chosen) < limit:            # round-robin the families
+        for ids in list(queues):
+            if ids:
+                chosen.append(ids.pop())
+                if len(chosen) >= limit:
+                    break
+        queues = [ids for ids in queues if ids]
+
+    items = []
+    for pid in chosen:
+        row = conn.execute("SELECT * FROM pairs WHERE id = ?", (pid,)).fetchone()
+        if row:
+            items.append(pair_to_dict(row))
+    return {"pool_size": len(pool), "items": items}
+
+
 def _gold_stats_cached(conn):
     """Header stats over the gold set (total, confirmed/corrected split, brand
     counts). Cached 15s so the Gold Labels page header is effectively free even
@@ -157,11 +210,28 @@ def _gold_stats_cached(conn):
         makes = conn.execute(
             f"SELECT final_make, COUNT(*) AS n FROM pairs WHERE {GOLD_WHERE} "
             "GROUP BY final_make ORDER BY n DESC").fetchall()
+        # Unbiased accuracy meter: ONLY random-audit reviews count (value-queue
+        # reviews oversample hard cases; legacy NULL rows are biased the same
+        # way). Grouped by source FAMILY so the cache tier isn't fragmented by
+        # the similarity embedded in its prediction_source string.
+        audit_rows = conn.execute(
+            "SELECT prediction_source, label_action FROM pairs "
+            "WHERE sample_mode = 'random' AND label_action IS NOT NULL").fetchall()
+        audit = {}
+        for r in audit_rows:
+            fam = audit.setdefault(source_family(r["prediction_source"]),
+                                   {"n": 0, "confirmed": 0})
+            fam["n"] += 1
+            if r["label_action"] == "confirmed":
+                fam["confirmed"] += 1
+        for fam in audit.values():
+            fam["rate"] = round(fam["confirmed"] / fam["n"], 3) if fam["n"] else None
         data = {
             "total":     row["total"] or 0,
             "corrected": row["corrected"] or 0,
             "confirmed": row["confirmed"] or 0,
             "by_make":   [{"make": m["final_make"], "count": m["n"]} for m in makes],
+            "audit":     audit,
         }
         _gold_stats["data"], _gold_stats["ts"] = data, time.time()
         return data
@@ -239,13 +309,15 @@ def gold_csv(conn: sqlite3.Connection = Depends(get_db)):
     # guarantees final_make; final_model/final_color may be unset (blank/unknown).
     rows = conn.execute(
         f"SELECT id, table_photo_id, image_path, final_make, "
-        f"final_model, final_color, label_action "
+        f"final_model, final_color, label_action, sample_mode "
         f"FROM pairs WHERE {GOLD_WHERE} ORDER BY table_photo_id, id").fetchall()
 
     output = io.StringIO()
     writer = csv.writer(output)
+    # sample_mode lets the dataset builder route rows: 'random' (unbiased) ->
+    # val/test, 'value'/blank (hard-case-biased) -> train.
     writer.writerow(["pair_id", "source_photo", "image_path", "brand", "model",
-                     "color", "label_action"])
+                     "color", "label_action", "sample_mode"])
     seen_images = set()
     n_rows = n_model = 0
     brands = set()
@@ -263,7 +335,7 @@ def gold_csv(conn: sqlite3.Connection = Depends(get_db)):
         model_out = canon_model.get(key, cleaned) if key and key != "unknown" else ""
         color = _norm_color(r["final_color"])
         writer.writerow([r["id"], r["table_photo_id"], img, brand, model_out, color,
-                         r["label_action"] or ""])
+                         r["label_action"] or "", r["sample_mode"] or ""])
         n_rows += 1
         brands.add(brand)
         if model_out:
@@ -360,13 +432,17 @@ def review_pair(
             status_code=400,
             detail=f"review_status must be one of: {', '.join(sorted(VALID_REVIEW))}",
         )
+    if data.sample_mode not in (None, "value", "random"):
+        raise HTTPException(
+            status_code=400, detail="sample_mode must be 'value', 'random', or omitted")
 
     row = conn.execute("SELECT id FROM pairs WHERE id = ?", (pair_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail=f"Pair '{pair_id}' not found")
 
-    # final_color/label_action come from the gold-labeling page; the live Pairs
-    # Review page omits them (they arrive as None) so its behaviour is unchanged.
+    # final_color/label_action/sample_mode come from the gold-labeling page; the
+    # live Pairs Review page omits them (arrive as None) so its behaviour is
+    # unchanged. sample_mode='random' rows feed the unbiased accuracy meter.
     conn.execute(
         """UPDATE pairs SET
                final_make    = ?,
@@ -374,10 +450,11 @@ def review_pair(
                final_color   = ?,
                label_action  = ?,
                review_status = ?,
-               notes         = ?
+               notes         = ?,
+               sample_mode   = ?
            WHERE id = ?""",
         (data.final_make, data.final_model, data.final_color, data.label_action,
-         data.review_status, data.notes, pair_id),
+         data.review_status, data.notes, data.sample_mode, pair_id),
     )
     conn.commit()
     _gold_stats["data"] = None          # gold set changed → drop the header cache

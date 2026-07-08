@@ -171,6 +171,13 @@ const api = {
         return apiFetch(`/api/pairs/gold-queue?limit=${limit}`);
     },
 
+    /** Random unreviewed pairs (any review_status) for the blind accuracy audit. */
+    auditSample({ limit = 5, exclude_tp = "" } = {}) {
+        const q = new URLSearchParams({ limit });
+        if (exclude_tp) q.set("exclude_tp", exclude_tp);
+        return apiFetch(`/api/pairs/audit-sample?${q.toString()}`);
+    },
+
     /** Gold-set training-readiness breakdown (per-brand counts, ML accuracy). */
     getGoldReadiness(minCount = 15) {
         return apiFetch(`/api/pairs/gold/readiness?min_count=${minCount}`);

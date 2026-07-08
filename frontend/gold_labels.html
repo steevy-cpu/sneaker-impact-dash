@@ -123,6 +123,10 @@
             <div class="gl-stat"><div class="n" id="gl-total">—</div><div class="l">Gold labels</div></div>
             <div class="gl-stat"><div class="n" id="gl-brands">—</div><div class="l">Brands</div></div>
             <div class="gl-stat"><div class="n" id="gl-corrected">—</div><div class="l">Corrected by human</div></div>
+            <div class="gl-stat" title="Confirm-rate among RANDOM audit cards only — unbiased, unlike the value-queue reviews which oversample hard cases. Grouped by prediction-source family.">
+                <div class="n" id="gl-audit" style="font-size:14px; line-height:1.5;">—</div>
+                <div class="l">AI accuracy (random audit)</div>
+            </div>
             <div class="gl-controls">
                 <label class="text-sm text-muted" for="gl-make">Brand</label>
                 <select id="gl-make"><option value="">All brands</option></select>
@@ -178,8 +182,8 @@
 </div>
 
 <script src="js/icons.js"></script>
-<script src="js/api.js?v=20"></script>
+<script src="js/api.js?v=21"></script>
 <script src="js/utils.js"></script>
-<script src="js/gold_labels.js?v=4"></script>
+<script src="js/gold_labels.js?v=5"></script>
 </body>
 </html>

@@ -169,6 +169,13 @@ BRIGHTDATA_ZONE       = os.getenv("BRIGHTDATA_ZONE", "")
 VISUAL_SEARCH_TIMEOUT = int(os.getenv("VISUAL_SEARCH_TIMEOUT", "150"))  # Lens ~40s typical
 VISUAL_SEARCH_MAX_TITLES = int(os.getenv("VISUAL_SEARCH_MAX_TITLES", "20"))
 
+# --- Random-audit gold sampling (unbiased per-tier accuracy meter) ----------
+# Blind audit cards spliced into the Quick Label deck are drawn uniformly at
+# random (stratified by prediction-source family) from UNREVIEWED pairs of the
+# last N days — regardless of review_status, so the auto-trusted NOT_REQUIRED
+# tiers (seen-shoe cache, confident cloud) get audited too.
+AUDIT_WINDOW_DAYS = int(os.getenv("AUDIT_WINDOW_DAYS", "30"))
+
 # --- Seen-shoe cache (Tier 0: reuse a past identification before paying cloud) -
 # Before the cloud fallback, the worker looks up an uncertain pair's DINOv2
 # embedding against `shoe_memory` (past resolved shoes). A confident neighbour

@@ -107,6 +107,14 @@ async function pickTable(tpId) {
 }
 
 /* ===== VIEW: labeling a table ======================================= */
+
+// Blind audit cards: 1 random unreviewed pair (any review_status, any table)
+// per AUDIT_EVERY table cards, capped. They render IDENTICALLY to normal
+// cards — the worker must not know which is which — and their saves are
+// tagged sample_mode:'random' so only they feed the unbiased accuracy meter.
+const AUDIT_EVERY = 5;
+const AUDIT_MAX = 10;
+
 async function enterTable(tpId) {
     QL.table = tpId; QL.cur = null; QL.queue = []; QL.labeled = 0;
     $("ql-picker").style.display = "none";
@@ -118,9 +126,31 @@ async function enterTable(tpId) {
         // Highest-value first within the table: mid-confidence (~0.6) leads.
         QL.queue = (data.items || []).sort((a, b) =>
             Math.abs((a.make_confidence ?? 0.5) - 0.6) - Math.abs((b.make_confidence ?? 0.5) - 0.6));
+        QL.queue.forEach(p => { p._sampleMode = "value"; });
         QL.total = QL.queue.length;
+        spliceAuditCards(tpId);                 // async, fire-and-forget
         next();
     } catch (err) { showError(err.message); }
+}
+
+async function spliceAuditCards(tpId) {
+    const want = Math.min(AUDIT_MAX, Math.ceil(QL.queue.length / AUDIT_EVERY));
+    if (!want) return;
+    let items = [];
+    try {
+        items = (await api.auditSample({ limit: want, exclude_tp: tpId })).items || [];
+    } catch (e) { return; }                     // audit failure NEVER blocks labeling
+    if (QL.table !== tpId) return;              // worker already left this table
+    const seen = new Set(QL.queue.map(p => p.id));
+    if (QL.cur) seen.add(QL.cur.id);
+    let pos = AUDIT_EVERY;
+    for (const p of items) {
+        if (seen.has(p.id)) continue;
+        p._sampleMode = "random";
+        QL.queue.splice(Math.min(pos, QL.queue.length), 0, p);
+        pos += AUDIT_EVERY + 1;
+    }
+    tableProgress();
 }
 
 function tableProgress() {
@@ -207,14 +237,18 @@ async function approve() {
     try {
         await api.reviewPair(p.id, { final_make: make, final_color: QL.color,
             final_model: $("ql-model").value.trim() || null,
-            label_action: computeAction(), review_status: "COMPLETED" });
+            label_action: computeAction(), review_status: "COMPLETED",
+            sample_mode: p._sampleMode || "value" });
         QL.labeled += 1; QL.session += 1;
         $("ql-session").textContent = QL.session;
         const goal = Math.max(1, parseInt($("ql-goal").value, 10) || 50);
         $("ql-bar-fill").style.width = Math.min(100, 100 * QL.session / goal) + "%";
         next();
     } catch (err) {
-        showToast(err.message || "Save failed", "error", 2500);
+        // An audit card can vanish between draw and save (deleted/reprocessed
+        // elsewhere) — skip it silently, never stall the worker's flow.
+        if (p._sampleMode === "random") { next(); }
+        else { showToast(err.message || "Save failed", "error", 2500); }
     } finally { btn.disabled = false; }
 }
 async function del() {

@@ -165,6 +165,7 @@ class PairReviewUpdate(BaseModel):
     label_action:  Optional[str] = None          # 'confirmed' | 'corrected'
     review_status: str           = "COMPLETED"   # NOT_REQUIRED | PENDING | COMPLETED
     notes:         Optional[str] = None
+    sample_mode:   Optional[str] = None          # 'value' | 'random' (blind audit card)
 
 
 # ---------------------------------------------------------------------------

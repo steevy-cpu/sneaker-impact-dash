@@ -94,6 +94,16 @@ function renderStats(s) {
     $("gl-brands").textContent = (s.by_make || []).length;
     const pct = s.total ? Math.round(100 * (s.corrected || 0) / s.total) : 0;
     $("gl-corrected").textContent = (s.corrected || 0).toLocaleString() + (s.total ? ` · ${pct}%` : "");
+    // Unbiased per-tier accuracy from blind random-audit cards (sample_mode='random').
+    const audit = s.audit || {};
+    const fams = Object.keys(audit).sort((a, b) => audit[b].n - audit[a].n);
+    const totalN = fams.reduce((t, f) => t + audit[f].n, 0);
+    $("gl-audit").innerHTML = !totalN
+        ? "collecting…"
+        : fams.map(f => {
+              const a = audit[f];
+              return `${esc(f)} <b>${Math.round(100 * (a.rate || 0))}%</b> <span class="text-muted">(n=${a.n})</span>`;
+          }).join(" · ") + (totalN < 20 ? ' <span class="text-muted">— small sample</span>' : "");
     if (!GL.filledFilter && s.by_make && s.by_make.length) {
         const sel = $("gl-make");
         sel.innerHTML = `<option value="">All brands (${s.total})</option>` +
