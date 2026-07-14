@@ -154,7 +154,7 @@ def _find_duplicates(conn, cleaned_barcode):
         return []
     rows = conn.execute(
         """SELECT id, created_at, weight_of_box, total_good_sneakers,
-                  total_end_of_life, casuals, status, num_pairs
+                  total_end_of_life, casuals, status, num_pairs, notes
            FROM table_photos WHERE barcode = ?
            ORDER BY created_at DESC, id DESC""", (cleaned_barcode,)).fetchall()
     return [dict(r) for r in rows]

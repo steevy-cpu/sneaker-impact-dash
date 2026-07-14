@@ -312,6 +312,32 @@
         if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); dupCancel(); }
     }, true);
 
+    // On OVERWRITE, load the previous entry's box data into any field the
+    // worker hasn't already typed in — they only correct what changed instead
+    // of retyping everything. Filled fields flash briefly so it's obvious
+    // which values came from the old entry.
+    function prefillFromPrevious(existing) {
+        const map = [
+            [capWeight, existing.weight_of_box],
+            [capGood, existing.total_good_sneakers],
+            [capEol, existing.total_end_of_life],
+            [capCasuals, existing.casuals],
+            [capNote, existing.notes],
+        ];
+        let filled = 0;
+        for (const [input, value] of map) {
+            if (input.value.trim() !== "") continue;   // worker's own typing wins
+            if (value == null || value === "") continue;
+            input.value = value;
+            filled++;
+            input.style.transition = "background-color 0.2s";
+            input.style.backgroundColor = "rgba(255, 200, 60, 0.25)";
+            setTimeout(() => { input.style.backgroundColor = ""; }, 1500);
+        }
+        capNoteCount.textContent = String(capNote.value.length);
+        return filled;
+    }
+
     // Scan-time duplicate check — fire-and-forget so it never delays the flow;
     // a failed check is harmless (the server's 409 backstop still protects).
     async function checkDuplicate(code) {
@@ -324,8 +350,13 @@
             showDupModal(r.matches[0], r.matches.length, {
                 onOverwrite: () => {
                     overwriteOf = r.matches[0].id;
-                    showToast("Will OVERWRITE " + r.matches[0].id + " on send", "info", 2600);
+                    const filled = prefillFromPrevious(r.matches[0]);
+                    showToast(filled
+                        ? "Previous data loaded — change what's needed, then capture (overwrites " + r.matches[0].id + ")"
+                        : "Will OVERWRITE " + r.matches[0].id + " on send",
+                        "info", 3200);
                     capWeight.focus();
+                    capWeight.select();   // typing replaces the loaded value outright
                 },
                 onCancel: () => {},
             });
