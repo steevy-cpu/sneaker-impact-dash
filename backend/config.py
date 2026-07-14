@@ -84,6 +84,14 @@ ENGINE_OLLAMA_URL   = os.getenv("ENGINE_OLLAMA_URL", "http://localhost:11434")
 ENGINE_MODEL_TIMEOUT = int(os.getenv("ENGINE_MODEL_TIMEOUT", "240"))  # per-pair VLM call
 ENGINE_JOB_TIMEOUT   = int(os.getenv("ENGINE_JOB_TIMEOUT", "1800"))   # per whole photo
 ENGINE_POLL_SECONDS  = float(os.getenv("ENGINE_POLL_SECONDS", "3"))   # worker poll interval
+# libcuda 570/595 segfault workaround: every observed engine crash (exit -11)
+# is the SAME libcuda instruction reading exactly 0x97bc bytes above the stack
+# pointer during CUDA init — whether that read lands on mapped memory depends
+# on the random (ASLR) stack layout of each fresh engine process (~1 in 3
+# spawns lose). Padding the child environment forces the kernel to map extra
+# pages at the top of the stack, so the wild read always hits mapped memory.
+# Set to 0 to disable the workaround entirely.
+ENGINE_ENV_PAD_KB    = int(os.getenv("ENGINE_ENV_PAD_KB", "64"))
 
 # Pairs whose make AND model confidence are >= this are auto-approved (review
 # not required, final make/model set) and exported to label_data. NOTE: the

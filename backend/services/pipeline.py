@@ -15,7 +15,8 @@ from backend.config import (ENGINE_DIR, ENGINE_RUNNER, ENGINE_PYTHON,
                             ENGINE_OLLAMA_URL, ENGINE_MODEL_TIMEOUT,
                             ENGINE_JOB_TIMEOUT, PAIRS_DIR, SEEN_SHOE_ENABLED,
                             ENGINE_SEGMENT_ESCALATE, ENGINE_SEGMENT_ESCALATE_MODE,
-                            ENGINE_LOCAL_MODEL_ID, ENGINE_CROP_MASK_SAM2)
+                            ENGINE_LOCAL_MODEL_ID, ENGINE_CROP_MASK_SAM2,
+                            ENGINE_ENV_PAD_KB)
 
 
 class EngineError(RuntimeError):
@@ -58,9 +59,15 @@ def process_table_photo(tp_id: str, image_fs_path: str) -> list:
     # Refine crop masks with SAM2 box-prompt unless explicitly disabled.
     if not ENGINE_CROP_MASK_SAM2:
         cmd.append("--no-crop-mask-sam2")
+    # Workaround for the libcuda-init stack over-read (see ENGINE_ENV_PAD_KB
+    # in config.py). env=None keeps plain inheritance when the pad is off.
+    env = None
+    if ENGINE_ENV_PAD_KB > 0:
+        env = dict(os.environ,
+                   _LIBCUDA_STACK_PAD="X" * (ENGINE_ENV_PAD_KB * 1024))
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=ENGINE_JOB_TIMEOUT)
+                              env=env, timeout=ENGINE_JOB_TIMEOUT)
         # Surface the engine's pairing decisions to the worker log (journal),
         # even on success — otherwise [pair]/COLOR VETO lines are only visible on
         # a failure tail, making pairing impossible to diagnose live.
@@ -72,8 +79,12 @@ def process_table_photo(tp_id: str, image_fs_path: str) -> list:
                 data = json.load(f)
         except Exception:
             tail = (proc.stderr or "")[-1000:]
-            raise EngineError(
+            err = EngineError(
                 f"engine produced no result (exit {proc.returncode}). {tail}")
+            # A negative returncode = killed by a signal (SIGSEGV etc.) — a
+            # crash, not a bad photo. The worker uses this to auto-retry once.
+            err.returncode = proc.returncode
+            raise err
         if data.get("error"):
             raise EngineError(data["error"])
         return data.get("pairs", [])

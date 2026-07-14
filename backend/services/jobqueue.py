@@ -74,6 +74,11 @@ class EngineWorker:
     def __init__(self):
         self._stop = threading.Event()
         self._thread = None
+        # Jobs already given ONE auto-retry after an engine signal-death
+        # (SIGSEGV etc. — hardware/driver flake, not a bad photo). In-memory on
+        # purpose: a second crash on the same job marks it failed for a human,
+        # and a service restart safely resets the budget.
+        self._crash_retried = set()
 
     def start(self):
         if not ENGINE_ENABLED:
@@ -440,6 +445,24 @@ class EngineWorker:
             except Exception as exc:                   # noqa: BLE001 - never affect status
                 print(f"[worker] outbox brand-summary error: {exc}")
         except Exception as exc:                       # noqa: BLE001 - never crash worker
+            # Engine killed by a signal (returncode < 0, e.g. SIGSEGV from the
+            # flaky GPU/RAM stack) = transient machine trouble, not a bad photo:
+            # re-queue automatically ONCE instead of parking it as failed.
+            rc = getattr(exc, "returncode", None)
+            if (isinstance(rc, int) and rc < 0
+                    and tp_id not in self._crash_retried):
+                self._crash_retried.add(tp_id)
+                try:
+                    conn.rollback()
+                    conn.execute(
+                        "UPDATE table_photos SET status = 'pending', claimed_at = NULL, "
+                        "error_message = NULL WHERE id = ?", (tp_id,))
+                    conn.commit()
+                    print(f"[worker] {tp_id}: engine died with signal {-rc} — "
+                          f"auto-requeued (one retry)", flush=True)
+                    return
+                except Exception as exc2:              # noqa: BLE001
+                    print(f"[worker] {tp_id}: auto-requeue failed: {exc2}", flush=True)
             try:
                 conn.rollback()
                 conn.execute(
