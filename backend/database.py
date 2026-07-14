@@ -243,6 +243,10 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
                                                        # labeling this table now (Quick Label)
         ("table_photos", "label_claimed_at", "TEXT"),  # claim timestamp; lease auto-expires so a
                                                        # closed tab never locks a table forever
+        ("table_photos", "notes", "TEXT"),        # operator's free-text note for this box
+        ("airtable_outbox", "notes", "TEXT"),     # carried for the (dark) Airtable note push;
+                                                  # never part of the counts payload — see
+                                                  # airtable_outbox._fields
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")

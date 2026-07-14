@@ -248,6 +248,15 @@ AIRTABLE_PARTNERS_TABLE  = os.getenv("AIRTABLE_PARTNERS_TABLE", "Partners")
 # summary on completion). Dormant until AIRTABLE_API_KEY + AIRTABLE_BASE_ID are
 # set (then auto-activates on restart). Set to 0 to keep reads but disable writes.
 AIRTABLE_SYNC_ENABLED = os.getenv("AIRTABLE_SYNC_ENABLED", "1") not in ("0", "false", "False")
+# Operator note -> Airtable. OFF by default and it must stay off until the base
+# owner actually creates the field: "Shipments Received" has NO generic Notes
+# field today (only ESG/EPR Notes and Marketing Notes, which belong to other
+# workflows). Airtable rejects the WHOLE payload with 422 UNKNOWN_FIELD_NAME if
+# one key isn't a real field — so putting the note in the counts payload would
+# take Weight/Good/End of Life/Casual+Brand Summary down with it. When the field
+# exists, set this to its exact name; the note is then pushed in its OWN PATCH,
+# after the counts have already landed, so it can never block them.
+AIRTABLE_NOTES_FIELD = os.getenv("AIRTABLE_NOTES_FIELD", "").strip()
 # Durable outbox: every capture's box data + brand summary is saved locally and
 # retried until its shipment exists in Airtable and the update lands (so data is
 # never lost if the shipment is imported AFTER it was scanned). How often the

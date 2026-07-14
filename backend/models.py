@@ -109,6 +109,7 @@ class MetadataCreate(BaseModel):
     total_good_sneakers: int             = 0
     total_end_of_life:   int             = 0
     casuals:             int             = 0
+    notes:               Optional[str]   = None  # operator's free-text note about the box
     operator_id:         Optional[str]   = None
     batch_id:            Optional[str]   = None
     overwrite_of:        Optional[str]   = None  # table_photos.id to replace on a duplicate barcode

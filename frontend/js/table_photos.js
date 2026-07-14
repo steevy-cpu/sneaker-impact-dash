@@ -33,6 +33,19 @@ function boxSummary(t) {
     return bits.join("  ") || "—";
 }
 
+// Operator note, trimmed to keep the row height stable. The full text is in the
+// title tooltip and, unabridged, in the detail modal.
+const NOTE_PREVIEW_CHARS = 48;
+
+function notePreview(t) {
+    const note = (t.notes || "").trim();
+    if (!note) return `<span class="td-muted">—</span>`;
+    const short = note.length > NOTE_PREVIEW_CHARS
+        ? note.slice(0, NOTE_PREVIEW_CHARS).trimEnd() + "…"
+        : note;
+    return `<span class="tp-note" title="${esc(note)}">📝 ${esc(short)}</span>`;
+}
+
 /* ---- List ------------------------------------------------------------ */
 
 async function loadList() {
@@ -58,9 +71,10 @@ async function loadList() {
             <td>${statusBadge(t.status)}</td>
             <td class="text-sm">${t.status === "completed" ? t.num_pairs : "—"}</td>
             <td>${t.shipment_info && t.shipment_info.partner ? "📦 " + esc(t.shipment_info.partner) : "—"}</td>
+            <td class="text-sm">${notePreview(t)}</td>
         </tr>`).join("");
     c.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th>ID</th><th>Time</th><th>Barcode</th><th>Box</th><th>Status</th><th>Pairs</th><th>Shipment</th></tr></thead>
+        <thead><tr><th>ID</th><th>Time</th><th>Barcode</th><th>Box</th><th>Status</th><th>Pairs</th><th>Shipment</th><th>Note</th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
     c.querySelectorAll(".tp-row").forEach(r => r.addEventListener("click", () => openDetail(r.dataset.id)));
 
@@ -130,6 +144,13 @@ async function openDetail(id) {
     const nTruePairs = (t.pairs || []).filter(p => p.pair_score != null).length;
     const nSingles = (t.pairs || []).filter(p => p.pair_score == null).length;
 
+    // Full note (the list only shows a preview). Rendered as its own block so a
+    // long remark wraps instead of stretching the meta grid.
+    const note = (t.notes || "").trim();
+    const noteBlock = note
+        ? `<div class="tp-note-block"><span class="tp-note-label">📝 Operator note</span>${esc(note)}</div>`
+        : "";
+
     body.innerHTML = `
         ${photo}
         <div class="tp-meta">
@@ -139,6 +160,7 @@ async function openDetail(id) {
             <div class="tp-kv"><span>Pairs</span><b>${nTruePairs}${nSingles ? ` <span class="text-xs text-muted" style="font-weight:400;">+ ${nSingles} single${nSingles > 1 ? "s" : ""}</span>` : ""}</b></div>
             ${ship}
         </div>
+        ${noteBlock}
         ${err}
         <h3 class="tp-pairs-title">Detected pairs ${TP.pairs.length ? `<span class="text-xs text-muted" style="font-weight:400;">— click a crop to view it full size</span>` : ""}</h3>
         <div class="tp-pairs">${pairs}</div>`;

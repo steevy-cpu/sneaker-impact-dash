@@ -1687,6 +1687,18 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
 .box-field-label { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .box-field-desc { font-size: var(--text-xs); color: var(--text-muted); margin: 2px 0 8px; }
 .box-field .form-input { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+/* Operator note — full-width, sits directly under the box grid. */
+.box-note {
+  border: 1.5px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px;
+  background: var(--bg); margin-top: 14px;
+}
+.box-note textarea.form-input {
+  margin-top: 6px; width: 100%; resize: vertical; min-height: 52px;
+  font-size: var(--text-sm); font-weight: var(--weight-normal); line-height: 1.4;
+}
+.box-note-count {
+  font-size: var(--text-xs); color: var(--text-muted); text-align: right; margin-top: 4px;
+}
 .box-barcode-row { margin-top: 14px; }
 .box-barcode-row .form-label { display: block; margin-bottom: 6px; }
 .modal .form-error { margin-top: 14px; }
@@ -1780,6 +1792,20 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
 .tp-kv { display: flex; flex-direction: column; gap: 2px; }
 .tp-kv span { font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
 .tp-pairs-title { font-size: var(--text-md); font-weight: var(--weight-semibold); margin: 8px 0; }
+
+/* Operator note — preview in the list (truncated, full text on hover) and the
+   full remark in the detail modal. */
+.tp-note { color: var(--text); cursor: help; }
+.tp-note-block {
+  border: 1.5px solid var(--border); border-left: 3px solid var(--primary);
+  border-radius: var(--radius-md); background: var(--bg);
+  padding: 10px 12px; margin: 0 0 14px; font-size: var(--text-sm);
+  line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+}
+.tp-note-label {
+  display: block; font-size: var(--text-xs); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .03em; margin-bottom: 4px;
+}
 .tp-pairs { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
 .tp-pair { display: flex; gap: 10px; align-items: center; border: 1px solid var(--border);
   border-radius: var(--radius-md); padding: 8px; }

@@ -6,7 +6,7 @@
     <title>Capture — Sneaker Impact</title>
     <script src="js/theme.js?v=2"></script>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/components.css?v=7">
+    <link rel="stylesheet" href="css/components.css?v=8">
 </head>
 <body>
 <div class="layout">
@@ -124,6 +124,18 @@
                             <input class="form-input" id="cap-casuals" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
                         </div>
                     </div>
+
+                    <!-- Operator note (optional): anything worth remembering about this
+                         box — condition, contamination, odd contents. Stored with the
+                         capture; never required to send. -->
+                    <div class="box-note">
+                        <div class="box-field-label" style="text-align:left;">
+                            📝 Note <span style="opacity:.6; font-weight:400;">(optional)</span>
+                        </div>
+                        <textarea class="form-input" id="cap-note" rows="2" maxlength="500"
+                                  placeholder="Anything worth flagging about this box — e.g. wet/moldy, mixed with clothing, damaged label…"></textarea>
+                        <div class="box-note-count"><span id="cap-note-count">0</span>/500</div>
+                    </div>
                     <div class="form-error" id="cap-error" style="display:none;"></div>
 
                     <div class="capture-actions">
@@ -168,6 +180,6 @@
 <script src="js/icons.js"></script>
 <script src="js/api.js?v=16"></script>
 <script src="js/utils.js"></script>
-<script src="js/capture.js?v=5"></script>
+<script src="js/capture.js?v=6"></script>
 </body>
 </html>

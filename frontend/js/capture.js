@@ -33,6 +33,8 @@
     const capGood = document.getElementById("cap-good");
     const capEol = document.getElementById("cap-eol");
     const capCasuals = document.getElementById("cap-casuals");
+    const capNote = document.getElementById("cap-note");
+    const capNoteCount = document.getElementById("cap-note-count");
     const capError = document.getElementById("cap-error");
     const captureBtn = document.getElementById("capture-btn");
     const uploadBtn = document.getElementById("upload-btn");
@@ -86,6 +88,8 @@
             good: parseInt(capGood.value, 10) || 0,
             eol: parseInt(capEol.value, 10) || 0,
             casuals: parseInt(capCasuals.value, 10) || 0,
+            // Optional — a note alone is NOT box data, so validate() ignores it.
+            note: capNote.value.trim(),
         };
     }
     function validate(d) {
@@ -97,8 +101,14 @@
         capError.style.display = "none";
         return true;
     }
+    function updateNoteCount() {
+        capNoteCount.textContent = String(capNote.value.length);
+    }
+    capNote.addEventListener("input", updateNoteCount);
+
     function resetFields() {
         capWeight.value = ""; capGood.value = ""; capEol.value = ""; capCasuals.value = "";
+        capNote.value = ""; updateNoteCount();
         barcodeInput.value = "";
         barcodeStatus.textContent = "Ready for barcode scanning…";
         shipmentPreview.style.display = "none"; lastLookup = ""; overwriteOf = null;
@@ -140,6 +150,7 @@
         fd.append("total_good_sneakers", String(d.good));
         fd.append("total_end_of_life", String(d.eol));
         fd.append("casuals", String(d.casuals));
+        if (d.note) fd.append("notes", d.note);
         fd.append("operator_id", OPERATOR_ID);
         if (overwriteOf) fd.append("overwrite_of", overwriteOf);
         try {

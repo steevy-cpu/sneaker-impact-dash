@@ -16,7 +16,8 @@ idempotent (upsert by barcode), so retries can't duplicate data.
 import threading
 from datetime import datetime
 
-from backend.config import SHIPMENT_BARCODE_TRIM, OUTBOX_RETRY_SECONDS
+from backend.config import (AIRTABLE_NOTES_FIELD, OUTBOX_RETRY_SECONDS,
+                            SHIPMENT_BARCODE_TRIM)
 from backend.database import get_connection
 from backend.services.airtable_sync import get_airtable_sync, sync_enabled
 from backend.services.shipment_lookup import normalize_barcode
@@ -37,14 +38,14 @@ def enqueue(conn, table_photo_id, barcode, box):
     conn.execute(
         """INSERT INTO airtable_outbox
              (table_photo_id, match_barcode, full_barcode, good, eol, casuals,
-              weight, status, attempts, created_at)
-           VALUES (?,?,?,?,?,?,?, 'pending', 0, ?)
+              weight, notes, status, attempts, created_at)
+           VALUES (?,?,?,?,?,?,?,?, 'pending', 0, ?)
            ON CONFLICT(table_photo_id) DO UPDATE SET
              match_barcode=excluded.match_barcode, full_barcode=excluded.full_barcode,
              good=excluded.good, eol=excluded.eol, casuals=excluded.casuals,
-             weight=excluded.weight, status='pending'""",
+             weight=excluded.weight, notes=excluded.notes, status='pending'""",
         (table_photo_id, match, barcode, box.get("good"), box.get("eol"),
-         box.get("casuals"), box.get("weight"), _now()),
+         box.get("casuals"), box.get("weight"), box.get("notes"), _now()),
     )
     conn.commit()
     return True
@@ -65,7 +66,12 @@ def set_brand_summary(conn, table_photo_id, summary):
 # --- sync attempts -----------------------------------------------------------
 
 def _fields(row):
-    """Airtable field payload from an outbox row (writable fields only)."""
+    """Airtable field payload from an outbox row (writable fields only).
+
+    The operator note is deliberately NOT here. Airtable rejects the ENTIRE
+    request with 422 UNKNOWN_FIELD_NAME if a single key isn't a real field, so a
+    note in this payload would take the counts down with it. It goes out in its
+    own PATCH afterwards — see _push_note."""
     f = {}
     if row["weight"] is not None:
         f["Weight (lbs)"] = row["weight"]
@@ -80,11 +86,33 @@ def _fields(row):
     return f
 
 
+def _push_note(rid, row):
+    """Best-effort: write the operator note to Airtable in its OWN PATCH, after
+    the counts have already landed.
+
+    Dark unless AIRTABLE_NOTES_FIELD names a field that really exists on
+    "Shipments Received" — the base has no generic Notes field today (only
+    ESG/EPR Notes and Marketing Notes, which belong to other workflows), so
+    until the owner adds one this is a no-op. Separating it from the counts
+    payload is the whole point: if the field name is wrong, Airtable 422s THIS
+    request only, and the box metadata is already safely written."""
+    note = row["notes"] if "notes" in row.keys() else None
+    if not AIRTABLE_NOTES_FIELD or not note or not rid:
+        return
+    try:
+        get_airtable_sync().patch_fields(rid, {AIRTABLE_NOTES_FIELD: note})
+    except Exception as exc:                               # noqa: BLE001 - fail safe
+        # Never re-raise and never mark the row unsynced: the counts DID land.
+        print(f"[outbox] note push failed for {row['table_photo_id']} "
+              f"(field '{AIRTABLE_NOTES_FIELD}'): {exc}")
+
+
 def _attempt(conn, row):
     """Try to sync one row; update its status/attempts/error. Returns status."""
     status, rid = get_airtable_sync().push(row["match_barcode"], _fields(row))
     now = _now()
     if status == "synced":
+        _push_note(rid, row)
         conn.execute(
             "UPDATE airtable_outbox SET status='synced', airtable_record_id=?, "
             "synced_at=?, last_attempt_at=?, attempts=attempts+1, last_error=NULL "

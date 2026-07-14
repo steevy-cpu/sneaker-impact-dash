@@ -86,6 +86,16 @@ class AirtableSync:
         self._create(barcode, fields)
         return "created"
 
+    def patch_fields(self, record_id, fields):
+        """PATCH arbitrary fields onto a known record. Used for side-writes that
+        must NOT ride along with the box-metadata payload (an unknown field name
+        422s the whole request), e.g. the operator note. Raises on failure — the
+        caller decides whether that matters."""
+        if not self.ok or not record_id or not fields:
+            return False
+        self._request("PATCH", f"{self.base_url}/{record_id}", {"fields": fields})
+        return True
+
     def push(self, match_barcode, fields):
         """Low-level upsert used by the durable outbox. `match_barcode` is the
         already-normalized key. Updates the matching shipment row, or creates it

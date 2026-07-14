@@ -47,6 +47,12 @@ def _thumb_path_or_none(tp_id: str, image_path):
     return None
 
 
+def _col(row: sqlite3.Row, name, default=None):
+    """Read a column that may predate the migration (sqlite3.Row raises on a
+    missing key). Keeps the list page serving even if a column isn't there yet."""
+    return row[name] if name in row.keys() else default
+
+
 def table_photo_to_dict(row: sqlite3.Row) -> dict:
     info = row["shipment_info"]
     return {
@@ -60,6 +66,7 @@ def table_photo_to_dict(row: sqlite3.Row) -> dict:
         "total_good_sneakers": row["total_good_sneakers"],
         "total_end_of_life":   row["total_end_of_life"],
         "casuals":             row["casuals"],
+        "notes":               _col(row, "notes"),
         "status":              row["status"],
         "error_message":       row["error_message"],
         "num_pairs":           row["num_pairs"],
@@ -89,6 +96,20 @@ def _clean_weight(weight):
     if not math.isfinite(w) or w <= 0 or w > MAX_BOX_WEIGHT_LBS:
         return None
     return w
+
+
+# An operator note is a short free-text remark about the box ("wet, moldy",
+# "partner sent kids' shoes"). Capped so a stuck key or a pasted wall of text
+# can't bloat the row (or, later, a synced Airtable cell).
+MAX_NOTE_CHARS = 500
+
+
+def _clean_note(note):
+    """Return a trimmed note, or None when it's empty/whitespace."""
+    text = (note or "").strip()
+    if not text:
+        return None
+    return text[:MAX_NOTE_CHARS]
 
 
 def _clean_barcode(barcode):
@@ -162,20 +183,23 @@ def _overwrite_previous(conn, overwrite_of, barcode):
 
 
 def _has_box_data(good, eol, casuals, weight) -> bool:
-    """Mirror the desktop rule: at least one box field must be > 0."""
+    """Mirror the desktop rule: at least one box field must be > 0. The note is
+    deliberately NOT box data — a note-only submit (no counts, no weight) is
+    still refused, so an operator can't queue an empty box by typing a remark."""
     return any([(good or 0) > 0, (eol or 0) > 0, (casuals or 0) > 0, (weight or 0) > 0])
 
 
 def _insert_table_photo(conn, tp_id, *, operator_id, batch_id, image_path,
-                        barcode, weight, good, eol, casuals):
+                        barcode, weight, good, eol, casuals, notes=None):
     conn.execute(
         """INSERT INTO table_photos (
             id, batch_id, operator_id, image_path, barcode,
             weight_of_box, total_good_sneakers, total_end_of_life, casuals,
-            status, num_pairs, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)""",
+            notes, status, num_pairs, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)""",
         (tp_id, batch_id, operator_id, image_path, barcode,
-         weight, good or 0, eol or 0, casuals or 0, datetime.now().isoformat()),
+         weight, good or 0, eol or 0, casuals or 0, notes,
+         datetime.now().isoformat()),
     )
     conn.commit()
 
@@ -231,6 +255,7 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
     can be attached later via /api/capture. Shipment lookup is wired in P5."""
     weight = _clean_weight(data.weight_of_box)
     barcode = _clean_barcode(data.barcode)
+    notes = _clean_note(data.notes)
     if not _has_box_data(data.total_good_sneakers, data.total_end_of_life,
                          data.casuals, weight):
         raise HTTPException(
@@ -246,6 +271,7 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
         conn, tp_id, operator_id=data.operator_id, batch_id=data.batch_id,
         image_path=None, barcode=barcode, weight=weight,
         good=data.total_good_sneakers, eol=data.total_end_of_life, casuals=data.casuals,
+        notes=notes,
     )
     if data.overwrite_of:
         _overwrite_previous(conn, data.overwrite_of, barcode)
@@ -253,7 +279,8 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
     _enqueue_outbox(conn, tp_id, barcode, {"weight": weight,
                                                 "good": data.total_good_sneakers,
                                                 "eol": data.total_end_of_life,
-                                                "casuals": data.casuals})
+                                                "casuals": data.casuals,
+                                                "notes": notes})
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
     return table_photo_to_dict(row)
 
@@ -266,6 +293,7 @@ async def capture(
     total_good_sneakers: int             = Form(0),
     total_end_of_life:   int             = Form(0),
     casuals:             int             = Form(0),
+    notes:               Optional[str]   = Form(None),
     operator_id:         Optional[str]   = Form(None),
     batch_id:            Optional[str]   = Form(None),
     overwrite_of:        Optional[str]   = Form(None),
@@ -278,6 +306,7 @@ async def capture(
     (the frontend's overwrite/cancel modal drives that)."""
     weight_of_box = _clean_weight(weight_of_box)
     barcode = _clean_barcode(barcode)
+    notes = _clean_note(notes)
     if not _has_box_data(total_good_sneakers, total_end_of_life, casuals, weight_of_box):
         raise HTTPException(
             status_code=422,
@@ -327,6 +356,7 @@ async def capture(
         conn, tp_id, operator_id=operator_id, batch_id=batch_id,
         image_path=get_table_photo_url(tp_id), barcode=barcode, weight=weight_of_box,
         good=total_good_sneakers, eol=total_end_of_life, casuals=casuals,
+        notes=notes,
     )
     # New row is in — NOW replace the previous entry (its outbox row dies in the
     # cascade; the fresh _enqueue_outbox below re-syncs the new box data).
@@ -336,7 +366,8 @@ async def capture(
     # it for the same reason as the Pillow work above.
     await run_in_threadpool(_attach_shipment, conn, tp_id, barcode)
     _enqueue_outbox(conn, tp_id, barcode, {"weight": weight_of_box, "good": total_good_sneakers,
-                                           "eol": total_end_of_life, "casuals": casuals})
+                                           "eol": total_end_of_life, "casuals": casuals,
+                                           "notes": notes})
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
     return table_photo_to_dict(row)
 
