@@ -92,6 +92,183 @@ def _whiten_bg(crop, seg, ox, oy, dilate, color=205, tighten=True, margin=10):
     return out
 
 
+def _insole_like(seg, image_area, min_frac, max_frac, min_elong, max_elong):
+    """Insole-shaped blob filter for SAM2's unlabeled everything-mode masks:
+    mid-size area and a footprint-like elongation (measured 2.6-4.0 on the
+    reference photos; table edges / background strips run 13+)."""
+    x1, y1, x2, y2 = seg.bbox
+    wid, hei = max(1, x2 - x1), max(1, y2 - y1)
+    elong = max(wid, hei) / min(wid, hei)
+    return (min_frac * image_area < seg.area() < max_frac * image_area
+            and min_elong <= elong <= max_elong)
+
+
+def _drop_nested(segs, containment=0.80):
+    """SAM2 everything-mode often emits a mask for an insole AND for regions
+    inside it (logo patch, heel pad). Largest-first, a segment whose box is
+    mostly inside an already-kept one is a sub-part, not another insole."""
+    kept = []
+    for s in sorted(segs, key=lambda s: -s.area()):
+        x1, y1, x2, y2 = s.bbox
+        area = max(1, (x2 - x1) * (y2 - y1))
+        nested = False
+        for k in kept:
+            kx1, ky1, kx2, ky2 = k.bbox
+            iw = max(0, min(x2, kx2) - max(x1, kx1))
+            ih = max(0, min(y2, ky2) - max(y1, ky1))
+            if iw * ih >= containment * area:
+                nested = True
+                break
+        if not nested:
+            kept.append(s)
+    return kept
+
+
+def _run_insoles(args, result):
+    """Insole capture mode: same crop/pair/whiten flow as shoes, different
+    detector and classifier. YOLOE's text prompts cannot detect insoles
+    (verified zero detections at conf 0.01), so segmentation is SAM2
+    everything-mode + the shape filter above. Brand is a linear head
+    (insole_head.pt) over the SAME DINOv2 embedder the pairing uses — no CLIP,
+    no ollama model-ID, no cloud, no shoeness gate."""
+    import config
+    import cv2
+    import numpy as np
+    import torch
+
+    from embedder_utils import build_image_embedder
+    from pair_utils import pair_shoes_hybrid
+    from segment_utils import Sam2Segmenter, _resolve_device
+    try:
+        from color_utils import classify_color
+    except Exception:                                  # noqa: BLE001 - optional
+        classify_color = None
+
+    image = cv2.imread(args.image)
+    if image is None:
+        raise RuntimeError(f"could not read image: {args.image}")
+    h, w = image.shape[:2]
+
+    segmenter = Sam2Segmenter(
+        getattr(config, "SEGMENT_ESCALATE_SAM_MODEL", "sam2_b.pt"),
+        0.1, _resolve_device())
+    segs = segmenter.segment(image)
+    try:
+        segmenter.release()                            # free GPU before DINOv2
+    except Exception as exc:                           # noqa: BLE001 - fail safe
+        print(f"[engine] segmenter.release() failed: {exc}")
+
+    n_raw = len(segs)
+    segs = [s for s in segs
+            if _insole_like(s, h * w,
+                            getattr(config, "INSOLE_MIN_AREA_FRAC", 0.01),
+                            getattr(config, "INSOLE_MAX_AREA_FRAC", 0.60),
+                            getattr(config, "INSOLE_MIN_ELONGATION", 1.5),
+                            getattr(config, "INSOLE_MAX_ELONGATION", 6.0))]
+    segs = _drop_nested(segs)
+    print(f"[engine] insole mode: {n_raw} SAM2 masks -> "
+          f"{len(segs)} insole-shaped")
+
+    embedder = build_image_embedder(config)
+
+    # Same pairing knobs as the shoe flow — the algorithm (adjacency + cosine
+    # veto + color veto) is class-agnostic, and insole pairs get placed
+    # touching on the table just like shoe pairs.
+    segs = pair_shoes_hybrid(
+        image, segs, embedder,
+        max_gap_frac=getattr(config, "SEGMENT_PAIR_MAX_GAP", 1.2),
+        veto_min=getattr(config, "SEGMENT_PAIR_VETO_MIN", 0.25),
+        rescue_min=getattr(config, "SEGMENT_PAIR_RESCUE_MIN", 0.80),
+        max_dist_frac=getattr(config, "SEGMENT_PAIR_MAX_DIST_FRAC", 0.20),
+        color_veto=getattr(config, "SEGMENT_PAIR_COLOR_VETO", False),
+        color_conf_min=getattr(config, "SEGMENT_PAIR_COLOR_CONF_MIN", 0.35),
+        color_dist=getattr(config, "SEGMENT_PAIR_COLOR_DIST", 90.0),
+        color_name_guard=getattr(config, "SEGMENT_PAIR_COLOR_NAME_GUARD", 0.0),
+        gap_outlier_k=getattr(config, "SEGMENT_PAIR_GAP_OUTLIER_K", 0.0),
+        gap_outlier_min=getattr(config, "SEGMENT_PAIR_GAP_OUTLIER_MIN", 4),
+        log=print,                                      # stdout -> stderr
+    )
+
+    payload = torch.load(args.insole_head, map_location="cpu")
+    classes = payload["classes"]
+    threshold = float(payload.get("unknown_threshold", 0.70))
+    head = torch.nn.Linear(int(payload["dim"]), len(classes))
+    head.load_state_dict(payload["state_dict"])
+    head.eval()
+    trained_on = payload.get("embedder")
+    emb_name = getattr(embedder, "name", None)
+    if trained_on and emb_name and trained_on != emb_name:
+        print(f"[engine] WARNING: insole head trained on {trained_on} "
+              f"but embedder is {emb_name} — predictions unreliable")
+
+    pad = getattr(config, "SEGMENT_CROP_PAD", 0.04)
+    whiten = getattr(config, "SEGMENT_WHITEN_CROP", False)
+    whiten_dilate = getattr(config, "SEGMENT_WHITEN_DILATE", 9)
+    whiten_color = getattr(config, "SEGMENT_WHITEN_COLOR", 205)
+    whiten_tighten = getattr(config, "SEGMENT_WHITEN_TIGHTEN", True)
+    whiten_margin = getattr(config, "SEGMENT_WHITEN_TIGHTEN_MARGIN", 10)
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    for i, seg in enumerate(segs, 1):
+        x1, y1, x2, y2 = _pad(seg.bbox, w, h, pad)
+        if x2 <= x1 or y2 <= y1:
+            continue
+        crop = image[y1:y2, x1:x2]
+        if whiten:
+            try:
+                crop = _whiten_bg(crop, seg, x1, y1, whiten_dilate,
+                                  whiten_color, whiten_tighten, whiten_margin)
+            except Exception as exc:                   # noqa: BLE001 - fail safe
+                print(f"[engine] whiten failed on insole {i}: {exc}")
+
+        color, color_conf = ("unknown", None)
+        if classify_color is not None:
+            try:
+                color, color_conf = classify_color(crop)
+            except Exception:                          # noqa: BLE001 - fail safe
+                pass
+
+        # Brand: embed the whitened crop (matches how the head was trained)
+        # and run the linear head. Below-threshold or explicit unknown class
+        # both report "unknown" — those insoles are counted but never pushed
+        # to a brand column.
+        make, make_conf = ("unknown", None)
+        try:
+            vec = np.asarray(embedder.embed(crop), dtype=np.float32)
+            vec /= (np.linalg.norm(vec) + 1e-8)
+            with torch.no_grad():
+                probs = head(torch.from_numpy(vec)).softmax(-1)
+            make_conf = float(probs.max())
+            ci = int(probs.argmax())
+            if classes[ci] != "unknown" and make_conf >= threshold:
+                make = classes[ci].capitalize()
+        except Exception as exc:                       # noqa: BLE001 - fail safe
+            print(f"[engine] insole brand classify failed on {i}: {exc}")
+
+        fname = f"{args.id_prefix}_{i}.jpg"
+        cv2.imwrite(os.path.join(args.out_dir, fname), crop)
+
+        result["pairs"].append({
+            "image_file":       fname,
+            "bbox":             [int(x1), int(y1), int(x2), int(y2)],
+            "pair_score":       _f(getattr(seg, "pair_score", None)),
+            "is_single":        seg.label != "pair",
+            "detected_color":   color,
+            "color_confidence": _f(color_conf),
+            "make":             make,
+            "make_confidence":  _f(make_conf),
+            "model":            "unknown",
+            "model_confidence": None,
+            "model_sources":    ["insole_head"],
+            "shoe_confidence":  None,
+            "embedding":        None,
+            "embedder":         None,
+        })
+
+    result["engine"] = {"segments": len(segs), "width": w, "height": h,
+                        "mode": "insoles"}
+
+
 def main():
     ap = argparse.ArgumentParser(description="Run the pipeline on one table photo.")
     ap.add_argument("--engine-dir", required=True, help="sneaker_impact_training dir")
@@ -121,6 +298,12 @@ def main():
     ap.add_argument("--no-crop-mask-sam2", action="store_true",
                     help="Don't refine crop masks with SAM2 box-prompt; use the "
                          "(looser) detection masks for whitening instead.")
+    ap.add_argument("--mode", default="shoes", choices=["shoes", "insoles"],
+                    help="'insoles' = insole capture mode: SAM2 everything-mode "
+                         "+ shape filter for detection, insole_head.pt for "
+                         "brand; no ollama/cloud/shoeness.")
+    ap.add_argument("--insole-head", default=None,
+                    help="Path to insole_head.pt (required for --mode insoles).")
     args = ap.parse_args()
 
     # Make the engine importable and run from its dir (so `import config`, the
@@ -131,6 +314,22 @@ def main():
     sys.stdout = sys.stderr
 
     result = {"pairs": [], "engine": {}}
+
+    # Insole mode is a self-contained branch: shared crop/whiten helpers, its
+    # own detector + classifier, and the same --out-json contract. The shoe
+    # path below is untouched.
+    if args.mode == "insoles":
+        try:
+            if not args.insole_head or not os.path.exists(args.insole_head):
+                raise RuntimeError(
+                    f"insole head not found: {args.insole_head!r}")
+            _run_insoles(args, result)
+        except Exception as exc:                       # noqa: BLE001 - report up
+            result["error"] = str(exc)
+        with open(args.out_json, "w") as f:
+            json.dump(result, f)
+        sys.exit(1 if result.get("error") else 0)
+
     try:
         import config
         import cv2

@@ -47,8 +47,14 @@
     const buzzVolume = document.getElementById("buzz-volume");
     const buzzVolumeLabel = document.getElementById("buzz-volume-label");
     const buzzTestBtn = document.getElementById("buzz-test");
+    const insoleRow = document.getElementById("insole-toggle-row");
+    const insoleToggle = document.getElementById("insole-toggle");
+    const insoleBadge = document.getElementById("insole-badge");
+    const insoleModeLabel = document.getElementById("insole-mode-label");
+    const insolePreview = document.getElementById("insole-parse-preview");
 
     let stream = null;
+    let insoleMode = false;      // station-config-gated insole-only capture
     let uploadedBlob = null;     // set only by the upload fallback
     let lastCaptureAt = 0;
     let busy = false;
@@ -89,10 +95,24 @@
             eol: parseInt(capEol.value, 10) || 0,
             casuals: parseInt(capCasuals.value, 10) || 0,
             // Optional — a note alone is NOT box data, so validate() ignores it.
+            // Insole counts for combined boxes live IN the note ("25 pair
+            // currex"); the server extracts them, the preview shows them.
             note: capNote.value.trim(),
         };
     }
     function validate(d) {
+        // Insole mode swaps the box-data rule for a barcode requirement: the
+        // counts fields are hidden, and the run is pointless without the
+        // shipment row its insole counts will land on.
+        if (insoleMode) {
+            if (barcodeInput.value.trim().length < 4) {
+                capError.textContent = "⚠️ Scan the box barcode first — insole capture needs it";
+                capError.style.display = "";
+                return false;
+            }
+            capError.style.display = "none";
+            return true;
+        }
         if (d.weight <= 0 && d.good <= 0 && d.eol <= 0 && d.casuals <= 0) {
             capError.textContent = "⚠️ Enter box data first — at least ONE field must be greater than 0";
             capError.style.display = "";
@@ -106,9 +126,33 @@
     }
     capNote.addEventListener("input", updateNoteCount);
 
+    /* ---- Insole counts detected in the NOTE (combined boxes) ------------- */
+    // Lenient in-browser extraction (js/insole_parse.js mirror) on each
+    // keystroke — microseconds on a short note, no network, can't slow the
+    // page. Purely informational: shows what the server WILL record, shows
+    // nothing when no counts are found, and never blocks the send.
+    function updateInsolePreview() {
+        if (!insolePreview) return;
+        const txt = (insoleTextEnabled && !insoleMode) ? capNote.value.trim() : "";
+        const found = txt ? window.extractInsoleCounts(txt) : null;
+        if (found) {
+            const bits = [];
+            for (const [brand, label] of [["currex", "Currex"], ["superfeet", "Superfeet"]]) {
+                const c = found[brand];
+                if (c) bits.push(`${label}: ${c[0]} pair${c[0] === 1 ? "" : "s"}, ${c[1]} single${c[1] === 1 ? "" : "s"}`);
+            }
+            insolePreview.textContent = "🦶 Insoles detected — " + bits.join(" · ");
+            insolePreview.className = "insole-parse-preview ok";
+        } else {
+            insolePreview.textContent = "";
+            insolePreview.className = "insole-parse-preview";
+        }
+    }
+    capNote.addEventListener("input", updateInsolePreview);
+
     function resetFields() {
         capWeight.value = ""; capGood.value = ""; capEol.value = ""; capCasuals.value = "";
-        capNote.value = ""; updateNoteCount();
+        capNote.value = ""; updateNoteCount(); updateInsolePreview();
         barcodeInput.value = "";
         barcodeStatus.textContent = "Ready for barcode scanning…";
         shipmentPreview.style.display = "none"; lastLookup = ""; overwriteOf = null;
@@ -147,9 +191,10 @@
         fd.append("image", blob, "table.jpg");
         fd.append("barcode", barcodeInput.value.trim());
         fd.append("weight_of_box", String(d.weight));
-        fd.append("total_good_sneakers", String(d.good));
-        fd.append("total_end_of_life", String(d.eol));
-        fd.append("casuals", String(d.casuals));
+        fd.append("total_good_sneakers", String(insoleMode ? 0 : d.good));
+        fd.append("total_end_of_life", String(insoleMode ? 0 : d.eol));
+        fd.append("casuals", String(insoleMode ? 0 : d.casuals));
+        fd.append("capture_mode", insoleMode ? "insoles" : "shoes");
         if (d.note) fd.append("notes", d.note);
         fd.append("operator_id", OPERATOR_ID);
         if (overwriteOf) fd.append("overwrite_of", overwriteOf);
@@ -207,6 +252,14 @@
                 if (s.status) bits.push(s.status);
                 shipmentPreview.className = "shipment-preview shipment-preview--found";
                 shipmentPreview.textContent = "Shipment: " + (bits.join(" · ") || "matched");
+                // Insole mode: the operator doesn't weigh the box — reuse the
+                // shipment's known weight. Their own typing always wins.
+                if (insoleMode && s.weight != null && capWeight.value.trim() === "") {
+                    capWeight.value = s.weight;
+                    capWeight.style.transition = "background-color 0.2s";
+                    capWeight.style.backgroundColor = "rgba(255, 200, 60, 0.25)";
+                    setTimeout(() => { capWeight.style.backgroundColor = ""; }, 1500);
+                }
             } else if (s.configured === false) {
                 shipmentPreview.style.display = "none";
             } else {
@@ -467,11 +520,50 @@
         el.addEventListener("keydown", (e) => {
             if (e.key !== "Enter" || dupModalOpen) return;   // Tab is handled natively by the browser
             e.preventDefault();
-            const next = BOX_ORDER[i + 1];
+            // skip fields hidden by insole mode (offsetParent is null)
+            const next = BOX_ORDER.slice(i + 1).find(f => f.offsetParent !== null);
             if (next) next.focus();
             else el.blur();
         });
     });
+
+    /* ---- Insole mode (feature-flagged via station config) ---------------- */
+    // The toggle row stays hidden unless the shared station config sets
+    // insole_mode — so nothing changes for the floor until it's switched on.
+    // The toggle itself is session-sticky (NOT reset after a send): insole
+    // boxes arrive in batches, and re-flipping per box invites mistakes.
+
+    const SHOE_COUNT_FIELDS = [capGood, capEol, capCasuals];
+
+    let insoleTextEnabled = false;   // station-config flag: insole_text_field
+
+    function applyInsoleMode() {
+        insoleMode = insoleToggle.checked;
+        SHOE_COUNT_FIELDS.forEach((el) => {
+            const cell = el.closest(".box-field");
+            if (cell) cell.style.display = insoleMode ? "none" : "";
+            if (insoleMode) el.value = "";
+        });
+        insoleBadge.style.display = insoleMode ? "" : "none";
+        insoleModeLabel.textContent = insoleMode ? "🦶 Insoles" : "👟 Shoes";
+        // Notes-extraction preview is for insoles in a SHOE box; in insole-only
+        // mode the engine counts, so the preview goes quiet.
+        updateInsolePreview();
+        capError.style.display = "none";
+        barcodeInput.focus();
+    }
+    insoleToggle.addEventListener("change", applyInsoleMode);
+
+    async function initInsoleFlag() {
+        try {
+            const cfg = await api.getStationConfig();
+            if (cfg && cfg.insole_mode) insoleRow.style.display = "flex";
+            if (cfg && cfg.insole_text_field) {
+                insoleTextEnabled = true;   // enables the notes-extraction preview
+                updateInsolePreview();
+            }
+        } catch (e) { /* flag off / config unreachable -> feature stays hidden */ }
+    }
 
     /* ---- Wiring --------------------------------------------------------- */
 
@@ -483,5 +575,6 @@
 
     refreshHint();
     refreshVolumeUI();
+    initInsoleFlag();
     startCamera();
 })();

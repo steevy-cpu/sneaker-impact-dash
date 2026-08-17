@@ -16,17 +16,18 @@ from backend.config import (ENGINE_DIR, ENGINE_RUNNER, ENGINE_PYTHON,
                             ENGINE_JOB_TIMEOUT, PAIRS_DIR, SEEN_SHOE_ENABLED,
                             ENGINE_SEGMENT_ESCALATE, ENGINE_SEGMENT_ESCALATE_MODE,
                             ENGINE_LOCAL_MODEL_ID, ENGINE_CROP_MASK_SAM2,
-                            ENGINE_ENV_PAD_KB)
+                            ENGINE_ENV_PAD_KB, ENGINE_INSOLE_HEAD)
 
 
 class EngineError(RuntimeError):
     """Raised when the engine subprocess fails or returns no usable result."""
 
 
-def process_table_photo(tp_id: str, image_fs_path: str) -> list:
+def process_table_photo(tp_id: str, image_fs_path: str, mode: str = "shoes") -> list:
     """Run the engine on one table photo. Returns a list of pair dicts; crops
     are written into PAIRS_DIR as "<tp_id>_<n>.jpg". Raises EngineError on
-    failure (the caller marks the job failed)."""
+    failure (the caller marks the job failed). mode='insoles' switches the
+    engine to the insole branch (SAM2 detection + insole_head.pt brand)."""
     if not os.path.exists(image_fs_path):
         raise EngineError(f"image not found: {image_fs_path}")
 
@@ -46,9 +47,12 @@ def process_table_photo(tp_id: str, image_fs_path: str) -> list:
         "--ollama-url",   ENGINE_OLLAMA_URL,
         "--model-timeout", str(ENGINE_MODEL_TIMEOUT),
     ]
+    if mode == "insoles":
+        cmd += ["--mode", "insoles", "--insole-head", str(ENGINE_INSOLE_HEAD)]
     # Only ask the engine to emit per-pair embeddings when the seen-shoe cache
-    # is on — otherwise it's pure overhead the live pipeline shouldn't pay.
-    if SEEN_SHOE_ENABLED:
+    # is on — otherwise it's pure overhead the live pipeline shouldn't pay
+    # (and the insole branch has no seen-shoe cache at all).
+    if SEEN_SHOE_ENABLED and mode != "insoles":
         cmd.append("--emit-embedding")
     # SAM2+gate escalation hybrid, opt-in via env (off = current pipeline).
     if ENGINE_SEGMENT_ESCALATE:

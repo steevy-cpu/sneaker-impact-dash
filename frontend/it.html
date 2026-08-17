@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Access — Sneaker Impact</title>
+    <script src="js/theme.js?v=3"></script>
+    <link rel="stylesheet" href="css/base.css?v=2">
+    <link rel="stylesheet" href="css/components.css?v=10">
+    <style>
+      .it-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+      .it-card { width: 100%; max-width: 360px; background: var(--surface, #fff); border: 1px solid var(--border, #e2e8f0);
+                 border-radius: 12px; padding: 28px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+      .it-card h1 { font-size: 18px; margin: 0 0 4px; }
+      .it-card p { font-size: 13px; color: var(--text-muted, #64748b); margin: 0 0 18px; }
+      .it-card input { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid var(--border, #cbd5e1);
+                       border-radius: 8px; background: var(--bg, #f8fafc); color: inherit; box-sizing: border-box; }
+      .it-card button { width: 100%; margin-top: 12px; padding: 10px; font-size: 14px; font-weight: 600;
+                        border: none; border-radius: 8px; background: var(--brand-teal, #08a6c2); color: #fff; cursor: pointer; }
+      .it-card button:disabled { opacity: 0.6; cursor: wait; }
+      .it-error { display: none; margin-top: 10px; font-size: 13px; color: #dc2626; }
+      .it-back { display: block; margin-top: 16px; font-size: 12px; color: var(--text-muted, #64748b); text-align: center; }
+    </style>
+</head>
+<body>
+<div class="it-wrap">
+    <form class="it-card" id="it-form">
+        <h1>IT access</h1>
+        <p>Enter the IT password to unlock the full dashboard on this browser.</p>
+        <input type="password" id="it-password" placeholder="Password" autocomplete="current-password" autofocus>
+        <button type="submit" id="it-submit">Unlock</button>
+        <div class="it-error" id="it-error"></div>
+        <a class="it-back" href="tableau.html">&larr; Back to the dashboard</a>
+    </form>
+</div>
+<script>
+(function () {
+    var form = document.getElementById("it-form");
+    var input = document.getElementById("it-password");
+    var btn = document.getElementById("it-submit");
+    var err = document.getElementById("it-error");
+
+    // Where to land after login: the gated page the user originally asked for
+    // (?next=, same-site paths only), else Table Photos.
+    var next = new URLSearchParams(location.search).get("next") || "";
+    if (!/^\/(?!\/)/.test(next)) next = "/frontend/table_photos.html";
+
+    form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        err.style.display = "none";
+        btn.disabled = true;
+        fetch("/api/it/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: input.value }),
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            if (res.ok && res.d.ok) { location.href = next; return; }
+            err.textContent = (res.d && res.d.error) || "Login failed";
+            err.style.display = "block";
+            btn.disabled = false;
+            input.select();
+        }).catch(function () {
+            err.textContent = "Could not reach the server";
+            err.style.display = "block";
+            btn.disabled = false;
+        });
+    });
+}());
+</script>
+</body>
+</html>

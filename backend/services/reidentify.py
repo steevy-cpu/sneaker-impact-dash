@@ -24,6 +24,7 @@ from backend.services.cloud_identify import identify as cloud_identify
 from backend.services.visual_search import (lens_titles, title_consensus,
                                             visual_search_enabled)
 from backend.utils.brands import canonical_brand
+from backend.utils.models import normalize_labels
 from backend.services.label_export import export_label
 
 _lock = threading.Lock()
@@ -87,6 +88,13 @@ def _reidentify_one(conn, tp_id):
             if not (isinstance(md_c, (int, float)) and md_c >= IDENTIFY_MIN_CONF):
                 model = "unknown"
 
+        # Write-time label cleanup ([[brand-model-dedup]] Phase B): store the
+        # canonical brand/model spelling; keep the raw strings only when changed.
+        raw_make, raw_model = make, model
+        make, model = normalize_labels(make, model)
+        raw_make = raw_make if raw_make != make else None
+        raw_model = raw_model if raw_model != model else None
+
         # Color stays local unless it too was unknown — then take the cloud's.
         color, color_c = r["detected_color"], r["color_confidence"]
         if _is_unknown(color):
@@ -101,12 +109,14 @@ def _reidentify_one(conn, tp_id):
         conn.execute(
             """UPDATE pairs SET make=?, make_confidence=?, model=?, model_confidence=?,
                    detected_color=?, color_confidence=?, model_sources=?,
-                   prediction_source=?, review_status=?, final_make=?, final_model=?
+                   prediction_source=?, review_status=?, final_make=?, final_model=?,
+                   raw_make=?, raw_model=?
                WHERE id=?""",
             (make, mk_c, model, md_c, color, color_c,
              json.dumps([res["source"]]), res["source"], review_status,
              make if confident else r["final_make"],
-             model if confident else r["final_model"], r["id"]),
+             model if confident else r["final_model"],
+             raw_make, raw_model, r["id"]),
         )
         fname = (r["image_path"] or "").split("/")[-1]
         # Never export a gated-unknown to the training set (a <60% guess is not a

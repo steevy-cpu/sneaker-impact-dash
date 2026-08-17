@@ -244,9 +244,23 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
         ("table_photos", "label_claimed_at", "TEXT"),  # claim timestamp; lease auto-expires so a
                                                        # closed tab never locks a table forever
         ("table_photos", "notes", "TEXT"),        # operator's free-text note for this box
+        ("table_photos", "capture_mode", "TEXT"), # NULL/'shoes' = normal box; 'insoles' =
+                                                  # insole-only capture (station toggle) —
+                                                  # processed by the insole pipeline, counted
+                                                  # as insole pairs/singles, not shoes
         ("airtable_outbox", "notes", "TEXT"),     # carried for the (dark) Airtable note push;
                                                   # never part of the counts payload — see
                                                   # airtable_outbox._fields
+        ("airtable_outbox", "insoles_currex", "TEXT"),     # insole-capture results as text,
+        ("airtable_outbox", "insoles_superfeet", "TEXT"),  # e.g. "3 pairs, 2 singles" — pushed
+                                                           # to the same-named Airtable columns
+        ("table_photos", "insoles_text", "TEXT"),  # combined boxes: the operator's raw
+                                                   # "insoles in box" free text (audit trail;
+                                                   # parsed counts go to the outbox columns)
+        ("pairs", "raw_make", "TEXT"),   # pre-normalization prediction strings, kept
+        ("pairs", "raw_model", "TEXT"),  # only when normalization CHANGED them (audit
+                                         # trail for write-time label cleanup; NULL =
+                                         # stored label is exactly what the model said)
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")

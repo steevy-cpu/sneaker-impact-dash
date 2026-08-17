@@ -26,9 +26,33 @@ CANONICAL_BRANDS = {
     "on running": "On",          # alias -> On
     "hoka": "Hoka",
     "hoka one one": "Hoka",       # alias -> Hoka
+    "l.a. gear": "L.A. Gear",
+    "la gear": "L.A. Gear",       # alias -> L.A. Gear
 }
 
 _UNKNOWN = {None, "", "unknown"}
+
+# Insole makers, by normalized key. Insoles ride along in shoe boxes and land on
+# the capture table, where the cloud happily brands them ("Currex RunPro") — but
+# they are NOT shoes: their counts are entered manually at capture (the
+# "Insoles in box" field) and belong in the Insoles_* Airtable columns. In SHOE
+# capture mode anything identified as one of these is excluded from Brand
+# Summary, label_data export, and the seen-shoe cache. The insole capture mode
+# has its own pipeline and never consults this set.
+# Only brands that are insole-ONLY here: Dr. Scholl's and Spenco also make real
+# footwear (Time Off Sneaker, Walking Shoe, sandals) and must keep counting as
+# shoes.
+INSOLE_BRANDS = {
+    "currex", "curex", "currexsole",
+    "superfeet", "super feet", "superfleet",
+    "powerstep", "power step",
+    "sof sole", "sofsole",
+}
+
+
+def is_insole_brand(name):
+    """True when a brand string names an insole maker (case/alias-insensitive)."""
+    return norm_key(name) in INSOLE_BRANDS
 
 
 def norm_key(name):

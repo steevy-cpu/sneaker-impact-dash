@@ -94,7 +94,7 @@ function render(d) {
     const k = d.kpis;
     setText("kpi-photos", n(k.table_photos));
     setText("kpi-pairs", n(k.pairs));
-    setText("kpi-shoes", n(k.shoes));
+    setText("kpi-eol", n(k.end_of_life));   // operator-counted end-of-life shoes
     setText("kpi-brands", n(k.brands));
     setText("kpi-models", n(k.models));
     setText("kpi-identified", k.identified_pct + "%");
@@ -126,6 +126,19 @@ function render(d) {
           ["#10b981", "#ef4444", "#f59e0b"]);
     const boxTot = bx.good + bx.eol + bx.casuals;
     insight("ins-box", `Good <b>${pct(bx.good, boxTot)}%</b> · EOL <b>${pct(bx.eol, boxTot)}%</b> · Casual <b>${pct(bx.casuals, boxTot)}%</b> · avg box ${bx.avg_weight} lb`);
+
+    // ---- Insoles (engine-counted insole boxes + manual "Insoles in box" texts) ----
+    const iz = d.insoles;
+    if (iz) {
+        const cx = iz.currex, sf = iz.superfeet, srcs = iz.sources || {};
+        setText("kpi-ins-currex", n(cx.total));
+        setText("kpi-ins-currex-sub", `${n(cx.pairs)} pairs · ${n(cx.singles)} singles`);
+        setText("kpi-ins-superfeet", n(sf.total));
+        setText("kpi-ins-superfeet-sub", `${n(sf.pairs)} pairs · ${n(sf.singles)} singles`);
+        setText("kpi-ins-boxes", n((srcs.scanned_boxes || 0) + (srcs.manual_boxes || 0)));
+        setText("kpi-ins-boxes-sub",
+                `${n(srcs.scanned_boxes || 0)} scanned · ${n(srcs.manual_boxes || 0)} typed at capture`);
+    }
 
     // ---- AI source ----
     const src = d.ai.source;

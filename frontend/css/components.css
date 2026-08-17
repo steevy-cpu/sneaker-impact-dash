@@ -1630,6 +1630,55 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
   border-radius: var(--radius-full); letter-spacing: .03em;
 }
 
+/* --- Insole capture-mode panel (to the right of the camera feed) -------- */
+.capture-stage-row {
+  display: flex; gap: 14px; align-items: stretch; justify-content: center;
+  max-width: 950px; margin: 0 auto;
+}
+.capture-stage-row > .capture-stage { margin: 0; flex: 1 1 auto; min-width: 0; }
+.insole-panel {
+  flex: 0 0 170px; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; padding: 14px 12px; text-align: center;
+  border: 1.5px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg); box-shadow: var(--shadow-sm);
+}
+.insole-panel-title {
+  font-size: var(--text-xs); font-weight: var(--weight-bold);
+  letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted);
+}
+.insole-switch { position: relative; display: inline-block; width: 58px; height: 30px; cursor: pointer; }
+.insole-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.insole-switch-track {
+  position: absolute; inset: 0; border-radius: 15px; background: var(--border);
+  transition: background var(--t) var(--ease);
+}
+.insole-switch-track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35);
+  transition: transform var(--t) var(--ease);
+}
+.insole-switch input:checked + .insole-switch-track { background: var(--primary); }
+.insole-switch input:checked + .insole-switch-track::after { transform: translateX(28px); }
+.insole-switch input:focus-visible + .insole-switch-track { outline: 2px solid var(--primary); outline-offset: 2px; }
+.insole-mode-label { font-size: var(--text-sm); font-weight: var(--weight-bold); }
+.insole-badge {
+  font-size: var(--text-xs); line-height: 1.6; padding: 6px 10px;
+  border-radius: var(--radius-md); background: rgba(8,166,194,.16); color: var(--text-muted);
+}
+/* Narrow screens: panel drops below the feed as a horizontal strip. */
+@media (max-width: 860px) {
+  .capture-stage-row { flex-direction: column; align-items: center; }
+  .insole-panel { flex: initial; width: 100%; max-width: 760px;
+                  flex-direction: row; flex-wrap: wrap; padding: 10px 12px; }
+}
+
+/* Live parse preview under the "Insoles in box" free-text field. */
+.insole-parse-preview {
+  min-height: 16px; margin-top: 4px; font-size: var(--text-xs); text-align: left;
+}
+.insole-parse-preview.ok { color: var(--success, #2e9e5b); }
+.insole-parse-preview.err { color: var(--danger, #c0392b); }
+
 /* --- Capture controls bar (barcode + big green button) ------------------ */
 .capture-controls { max-width: 760px; margin: 18px auto 0; display: flex; flex-direction: column; gap: 14px; }
 .capture-barcode-row { display: flex; flex-direction: column; gap: 6px; }

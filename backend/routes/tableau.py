@@ -25,9 +25,10 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
+from backend.config import IDENTIFY_MIN_CONF, TABLEAU_MIN_COUNT
 from backend.database import get_db
-from backend.utils.brands import (canonical_brand, merge_brand_counts,
-                                  norm_key, variants_for)
+from backend.utils.brands import (INSOLE_BRANDS, canonical_brand, is_insole_brand,
+                                  merge_brand_counts, norm_key, variants_for)
 from backend.utils.models import merge_model_counts, clean_model
 
 router = APIRouter(prefix="/api/tableau", tags=["Tableau"])
@@ -45,6 +46,33 @@ _RANGES = ("today", "week", "30d", "90d", "all")
 # clustered 7.44-7.50 across live rows) so the dash headline agrees with what the
 # org already reports. It's a weight-based ESTIMATE — labeled as such in the UI.
 CO2E_KG_PER_LB = 7.46
+
+# Verified-label floors for the brand/model charts ([[brand-model-dedup]]): a
+# pair's brand counts only when a human/auto-approved final label exists OR the
+# prediction cleared the identify floor — one-off sub-0.60 Gemini guesses
+# ("Aero", "Cat & Jack") otherwise pile up as hundreds of ghost brands. Same
+# rule per-field for models. Each fragment binds one IDENTIFY_MIN_CONF param.
+_BRAND_OK = "(final_make IS NOT NULL OR make_confidence >= ?)"
+_MODEL_OK = "(final_model IS NOT NULL OR model_confidence >= ?)"
+# SQL twin of is_insole_brand(), so the "Identified" KPI can apply the same
+# insole exclusion as the (Python-side) brand chart and the numbers reconcile
+# exactly. Binds len(_INSOLE_PARAMS) params.
+_INSOLE_PARAMS = tuple(sorted(INSOLE_BRANDS))
+_NOT_INSOLE = ("LOWER(COALESCE(final_make, make)) NOT IN ("
+               + ",".join("?" * len(_INSOLE_PARAMS)) + ")")
+
+
+def _bucket_tail(rows, kind):
+    """Roll (label, count) rows under TABLEAU_MIN_COUNT into one trailing
+    'Other (N <kind>)' row so charts/CSVs list only labels with real support.
+    The tail is still counted — just not enumerated."""
+    if TABLEAU_MIN_COUNT <= 1:
+        return rows
+    head = [r for r in rows if r[1] >= TABLEAU_MIN_COUNT]
+    tail = [r for r in rows if r[1] < TABLEAU_MIN_COUNT]
+    if tail:
+        head.append((f"Other ({len(tail)} {kind})", sum(n for _, n in tail)))
+    return head
 
 
 def _since_for(range_key):
@@ -102,27 +130,41 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
     singles = cur(f"SELECT COUNT(*) FROM pairs WHERE pair_score IS NULL "
                   f"AND {pw}", P).fetchone()[0]
     true_pairs = total_pairs - singles
-    # one record can be a tied pair (2 shoes) or a single (1 shoe)
-    total_shoes = true_pairs * 2 + singles
 
+    # Same verified floor + insole exclusion as the brand/model charts, so the
+    # "Identified" KPI reconciles exactly with the chart totals (an unverified
+    # sub-floor guess is not "identified", and insoles have their own section).
     known_make = cur(f"SELECT COUNT(*) FROM pairs WHERE "
                      f"COALESCE(final_make, make) NOT IN ('unknown','') "
                      f"AND COALESCE(final_make, make) IS NOT NULL "
-                     f"AND {pw}", P).fetchone()[0]
+                     f"AND {_BRAND_OK} AND {_NOT_INSOLE} "
+                     f"AND {pw}",
+                     (IDENTIFY_MIN_CONF,) + _INSOLE_PARAMS + P).fetchone()[0]
     known_model = cur(f"SELECT COUNT(*) FROM pairs WHERE "
                       f"COALESCE(final_model, model) NOT IN ('unknown','') "
                       f"AND COALESCE(final_model, model) IS NOT NULL "
-                      f"AND {pw}", P).fetchone()[0]
+                      f"AND {_MODEL_OK} AND {_NOT_INSOLE} "
+                      f"AND {pw}",
+                      (IDENTIFY_MIN_CONF,) + _INSOLE_PARAMS + P).fetchone()[0]
 
+    # Insole brands are excluded from the SHOE charts: insole-mode captures put
+    # their Currex/Superfeet rows in the same `pairs` table, and they get their
+    # own "insoles" block below instead of masquerading as shoe brands.
     brands_raw = cur(f"SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
-                     f"WHERE {pw} GROUP BY COALESCE(final_make, make)", P).fetchall()
-    brands = merge_brand_counts(brands_raw)     # canonical: ASICS/Asics -> one
+                     f"WHERE {pw} AND {_BRAND_OK} "
+                     f"GROUP BY COALESCE(final_make, make)",
+                     P + (IDENTIFY_MIN_CONF,)).fetchall()
+    brands = _bucket_tail(merge_brand_counts(
+        (b, n) for b, n in brands_raw if not is_insole_brand(b)), "brands")
     # Group by (make, model) so we can strip each model's OWN brand prefix
     # ('Hoka One One Clifton' -> 'Clifton') before the case+punct merge.
     mm_raw = cur(f"SELECT COALESCE(final_make, make), COALESCE(final_model, model), "
-                 f"COUNT(*) FROM pairs WHERE {pw} GROUP BY 1, 2", P).fetchall()
-    models = merge_model_counts(
-        (clean_model(model, make), cnt) for make, model, cnt in mm_raw)
+                 f"COUNT(*) FROM pairs WHERE {pw} AND {_BRAND_OK} AND {_MODEL_OK} "
+                 f"GROUP BY 1, 2",
+                 P + (IDENTIFY_MIN_CONF, IDENTIFY_MIN_CONF)).fetchall()
+    models = _bucket_tail(merge_model_counts(
+        (clean_model(model, make), cnt) for make, model, cnt in mm_raw
+        if not is_insole_brand(make)), "models")
 
     colors = [(c, n) for c, n in cur(
         f"SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
@@ -220,6 +262,42 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
         "co2e_tonnes": round(co2e_kg / 1000.0, 1),
     }
 
+    # ---- insoles ----------------------------------------------------------
+    # Two additive sources, no overlap: (1) insole-only capture runs, counted by
+    # the engine into `pairs` rows under capture_mode='insoles'; (2) manual
+    # "Insoles in box" texts on shoe captures, re-parsed with the same strict
+    # parser that validated them at capture. The handful of short texts per
+    # range is trivial work behind this endpoint's 60s cache.
+    ins = {"currex": {"pairs": 0, "singles": 0},
+           "superfeet": {"pairs": 0, "singles": 0}}
+    ipw = "p.created_at >= ?" if since else "1=1"
+    for brand, is_single, n in cur(
+            f"SELECT LOWER(COALESCE(p.final_make, p.make)), "
+            f"p.pair_score IS NULL, COUNT(*) FROM pairs p "
+            f"JOIN table_photos t ON t.id = p.table_photo_id "
+            f"WHERE t.capture_mode = 'insoles' AND {ipw} GROUP BY 1, 2", P):
+        if brand in ins:
+            ins[brand]["singles" if is_single else "pairs"] += n
+    scanned_boxes = cur(f"SELECT COUNT(*) FROM table_photos "
+                        f"WHERE capture_mode = 'insoles' AND status = 'completed' "
+                        f"AND {tw}", P).fetchone()[0]
+    from backend.utils.insole_text import parse_insole_text
+    manual_boxes = 0
+    for (txt,) in cur(f"SELECT insoles_text FROM table_photos "
+                      f"WHERE insoles_text IS NOT NULL AND {tw}", P):
+        parsed = parse_insole_text(txt)
+        if parsed:
+            manual_boxes += 1
+            for b in ins:                  # parser omits unmentioned brands
+                got = parsed.get(b)
+                if got:
+                    ins[b]["pairs"] += got[0]
+                    ins[b]["singles"] += got[1]
+    for b in ins:                 # physical insole count: a pair is 2 insoles
+        ins[b]["total"] = ins[b]["pairs"] * 2 + ins[b]["singles"]
+    insoles = {**ins, "sources": {"scanned_boxes": scanned_boxes,
+                                  "manual_boxes": manual_boxes}}
+
     # ---- timeline (daily, spanning the selected range, zero-filled) -------
     # Start at the range floor; for 'all' start at the first photo (system
     # launch). Cap the drawn span so the chart stays readable.
@@ -248,7 +326,10 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
         "kpis": {
             "table_photos": total_photos,
             "pairs": total_pairs,
-            "shoes": total_shoes,
+            # Operator-counted (capture-page field), NOT an AI detection count —
+            # the old AI-derived "shoes processed" (pairs*2+singles) disagreed
+            # with the operator totals on the same page and confused readers.
+            "end_of_life": box["eol"],
             "brands": len(brands),
             "models": len(models),
             "identified_pct": round(100.0 * known_make / total_pairs, 1)
@@ -260,6 +341,7 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
         "models": [{"label": l, "count": n} for l, n in models[:12]],
         "colors": [{"label": c, "count": n} for c, n in colors],
         "ai": ai,
+        "insoles": insoles,
         "pairing": pairing,
         "airtable": airtable,
         "box": box,
@@ -300,9 +382,11 @@ def brands_csv(range: str = "all", conn: sqlite3.Connection = Depends(get_db)):
     pw = "created_at >= ?" if since else "1=1"
     brands_raw = conn.execute(
         f"SELECT COALESCE(final_make, make), COUNT(*) FROM pairs "
-        f"WHERE {pw} GROUP BY COALESCE(final_make, make)",
-        (since,) if since else ()).fetchall()
-    brands = merge_brand_counts(brands_raw)  # canonical, [(label, count)] desc
+        f"WHERE {pw} AND {_BRAND_OK} GROUP BY COALESCE(final_make, make)",
+        ((since,) if since else ()) + (IDENTIFY_MIN_CONF,)).fetchall()
+    # canonical, [(label, count)] desc; insole brands live in the insoles block
+    brands = _bucket_tail(merge_brand_counts(
+        (b, n) for b, n in brands_raw if not is_insole_brand(b)), "brands")
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -346,14 +430,17 @@ def _brand_data(conn, name, rng):
     params = tuple(variants) + P
 
     total = conn.execute(
-        f"SELECT COUNT(*) FROM pairs WHERE {where}", params).fetchone()[0]
+        f"SELECT COUNT(*) FROM pairs WHERE {where} AND {_BRAND_OK}",
+        params + (IDENTIFY_MIN_CONF,)).fetchone()[0]
     models_raw = conn.execute(
         f"SELECT COALESCE(final_model, model), COUNT(*) FROM pairs "
-        f"WHERE {where} GROUP BY COALESCE(final_model, model)", params).fetchall()
+        f"WHERE {where} AND {_MODEL_OK} "
+        f"GROUP BY COALESCE(final_model, model)",
+        params + (IDENTIFY_MIN_CONF,)).fetchall()
     # All rows are this one brand, so strip its prefix ('Hoka One One Clifton'
     # -> 'Clifton') before the case+punct merge.
-    models = merge_model_counts(
-        (clean_model(m, canon), n) for m, n in models_raw)
+    models = _bucket_tail(merge_model_counts(
+        (clean_model(m, canon), n) for m, n in models_raw), "models")
     colors = [(c, n) for c, n in conn.execute(
         f"SELECT detected_color, COUNT(*) FROM pairs WHERE detected_color "
         f"IS NOT NULL AND {where} GROUP BY detected_color "

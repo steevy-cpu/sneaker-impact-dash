@@ -1,10 +1,11 @@
 import sqlite3
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
-from backend.config import APP_MODE, MODEL_VERSION, IMAGES_DIR, SIM_IMAGES_DIR
+from backend.config import APP_MODE, MODEL_VERSION, IMAGES_DIR, SIM_IMAGES_DIR, IT_PASSWORD
 from backend.database import get_db
+from backend.routes.it_auth import is_authed
 from backend.utils.brands import canonical_brand, norm_key, CANONICAL_BRANDS
 
 router = APIRouter(prefix="/api", tags=["Health"])
@@ -19,7 +20,7 @@ def _dir_size_mb(path) -> float:
 
 
 @router.get("/health", summary="System health and stats")
-def health_check(conn: sqlite3.Connection = Depends(get_db)):
+def health_check(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     """
     Returns current system status, operating mode, and summary statistics.
 
@@ -55,6 +56,10 @@ def health_check(conn: sqlite3.Connection = Depends(get_db)):
         "pending_review_count":    pending_review_count,
         "model_version":           MODEL_VERSION,
         "storage_usage_mb":        storage_mb,
+        # IT gate (theme.js reads these on every page to show/hide gated nav):
+        # it_authed is True for everyone while the gate is disabled.
+        "it_gate":                 bool(IT_PASSWORD),
+        "it_authed":               is_authed(request),
     }
 
 

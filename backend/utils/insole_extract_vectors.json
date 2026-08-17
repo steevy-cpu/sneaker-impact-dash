@@ -1,0 +1,27 @@
+{
+  "_comment": "Shared LENIENT-extraction test vectors for the notes field — Python (backend/utils/insole_text.py extract_insole_counts) and JS (frontend/js/insole_parse.js extractInsoleCounts) must both produce exactly these results. expected: {brand: [pairs, singles]} or null when nothing reliable found. Distinct from insole_text_vectors.json (the STRICT dedicated-field parser).",
+  "cases": [
+    {"text": "25 pair  accessories CUR REX",        "expected": {"currex": [25, 0]}},
+    {"text": "currex: 10",                          "expected": {"currex": [10, 0]}},
+    {"text": "Insoles: 1 Pair currex",              "expected": {"currex": [1, 0]}},
+    {"text": "6 PAIR  SUPERFEET",                   "expected": {"superfeet": [6, 0]}},
+    {"text": "14 PAIR SUPERFEET",                   "expected": {"superfeet": [14, 0]}},
+    {"text": "2 currex pairs, 1 superfeet single",  "expected": {"currex": [2, 0], "superfeet": [0, 1]}},
+    {"text": "box damaged, wet shoes",              "expected": null},
+    {"text": "",                                    "expected": null},
+    {"text": "currex insoles included",             "expected": null},
+    {"text": "3 boxes currex insoles",              "expected": null},
+    {"text": "2 currex pairs and 3 nike",           "expected": {"currex": [2, 0]}},
+    {"text": "10 currex",                           "expected": {"currex": [10, 0]}},
+    {"text": "sf 4 pairs 2 singles",                "expected": {"superfeet": [4, 2]}},
+    {"text": "good box, 14 pair superfeet, thanks", "expected": {"superfeet": [14, 0]}},
+    {"text": "two currex pairs",                    "expected": {"currex": [2, 0]}},
+    {"text": "5 pairs",                             "expected": null},
+    {"text": "customer refund 12, currex 2 pairs",  "expected": {"currex": [2, 0]}},
+    {"text": "superfeet 2p1s",                      "expected": {"superfeet": [2, 1]}},
+    {"text": "1 superfeet single",                  "expected": {"superfeet": [0, 1]}},
+    {"text": "shoes very dirty. 3 pairs cur rex in box", "expected": {"currex": [3, 0]}},
+    {"text": "wet box. 2 currex pairs, 1 superfeet single", "expected": {"currex": [2, 0], "superfeet": [0, 1]}},
+    {"text": "currex 2 pairs, 1 single, superfeet 3",  "expected": {"currex": [2, 1], "superfeet": [3, 0]}}
+  ]
+}

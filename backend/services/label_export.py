@@ -62,6 +62,12 @@ def export_label(crop_path, *, color, make, model, make_conf, model_conf,
     (skipped / already exported / failed)."""
     folder = str(LABEL_DATA_DIR)
     try:
+        # label_data is a SHOE training set. Insoles arrive in shoe boxes and get
+        # confidently branded by the cloud ("Currex RunPro"), so gate here — the
+        # one funnel every export path (worker + reidentify) goes through.
+        from backend.utils.brands import is_insole_brand
+        if is_insole_brand(make):
+            return None
         if not os.path.exists(crop_path):
             return None
         if _already_exported(folder, source_photo, source_pair):

@@ -546,3 +546,28 @@ h1, h2, h3, h4 { margin: 0; }
 [data-theme="dark"] .override-card-body    { background: var(--card-bg); }
 [data-theme="dark"] .card                  { background: var(--card-bg); border-color: var(--border); }
 [data-theme="dark"] .table-wrap table      { background: var(--card-bg); }
+
+/* ── IT gate ──────────────────────────────────────────────────────────
+   Gated nav links/sections are hidden until theme.js confirms an IT
+   session (body.it-authed). Cosmetic only — the backend middleware is
+   the real gate. */
+.nav-gated { display: none; }
+body.it-authed a.nav-gated { display: flex; }
+body.it-authed div.nav-gated { display: block; }
+
+.it-logout {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: var(--weight-semi, 600);
+  white-space: nowrap;
+  color: #67e8f9;
+  background: rgba(8,166,194,0.18);
+  border: 1px solid var(--brand-teal, #08a6c2);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.it-logout:hover { background: rgba(8,166,194,0.32); }

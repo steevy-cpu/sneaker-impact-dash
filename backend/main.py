@@ -12,18 +12,21 @@ Docs: http://localhost:8000/docs
 """
 from contextlib import asynccontextmanager
 
+from urllib.parse import quote
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import (APP_MODE, IMAGES_DIR, SIM_IMAGES_DIR, FRONTEND_DIR,
-                            TABLE_PHOTOS_DIR, PAIRS_DIR, LABEL_DATA_DIR)
+                            TABLE_PHOTOS_DIR, PAIRS_DIR, LABEL_DATA_DIR,
+                            IT_PASSWORD)
 from backend.database import init_db, get_connection
 from backend.routes import (airtable_outbox, analytics, batches, capture,
-                            config_station, export, health, label_data, labeling,
-                            pairs, public_crops, reidentify, shipment, shoes,
-                            simulation, tableau)
+                            config_station, export, health, it_auth, label_data,
+                            labeling, pairs, public_crops, reidentify, shipment,
+                            shoes, simulation, tableau)
 
 # Directories must exist before app.mount() is called (mount happens at import time)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -67,10 +70,17 @@ async def lifespan(app: FastAPI):
     from backend.services.airtable_outbox import retrier
     retrier.start()
 
+    # 5. Start the camera settings re-apply worker (the station powers off
+    #    nightly and its USB camera forgets brightness etc.; this restores the
+    #    operator's saved values each morning).
+    from backend.services.camera_persist import reapplier
+    reapplier.start()
+
     yield  # --- app is live here ---
 
     worker.stop()
     retrier.stop()
+    reapplier.stop()
     print("\nShutting down cleanly.")
 
 
@@ -119,6 +129,46 @@ async def revalidate_html(request, call_next):
     return response
 
 
+# IT gate: default-deny everything except what the operator stations need
+# (Capture / Tableau / Config pages + their APIs). Inert while IT_PASSWORD is
+# unset. Pure in-process path check + one HMAC compare — no DB, no I/O, so it
+# adds nothing measurable to request latency.
+_IT_PUBLIC_EXACT = {
+    "/", "/it", "/favicon.ico",
+    "/frontend/capture.html", "/frontend/tableau.html",
+    "/frontend/config.html", "/frontend/it.html",
+    "/api/capture", "/api/metadata", "/api/health",
+}
+_IT_PUBLIC_PREFIXES = (
+    # shared assets (page scripts hold no data; the APIs behind them are gated)
+    "/frontend/js/", "/frontend/css/", "/frontend/assets/",
+    # capture page
+    "/api/barcode-check/", "/api/shipment/",
+    # config page (station + camera control)
+    "/api/config/", "/api/camera/",
+    # tableau page
+    "/api/tableau/",
+    # the gate's own login endpoints, and the signed Lens crop fetcher
+    # (Google's servers fetch crops through /public/ during visual search)
+    "/api/it/", "/public/",
+)
+
+
+@app.middleware("http")
+async def it_gate(request, call_next):
+    path = request.url.path
+    if (not IT_PASSWORD
+            or request.method == "OPTIONS"          # CORS preflight
+            or path in _IT_PUBLIC_EXACT
+            or path.startswith(_IT_PUBLIC_PREFIXES)
+            or it_auth.is_authed(request)):
+        return await call_next(request)
+    if path.startswith(("/api/", "/images/", "/label_images/", "/sim_images/")):
+        return JSONResponse({"detail": "IT login required"}, status_code=401)
+    # Anything else is a page (incl. /docs and /frontend/*.html) — send to login.
+    return RedirectResponse(f"/it?next={quote(path)}")
+
+
 # ---------------------------------------------------------------------------
 # Static file mounts
 # These must come BEFORE router includes so FastAPI resolves them first.
@@ -157,6 +207,7 @@ app.include_router(reidentify.router)      # backfill brand+model for unknown pa
 app.include_router(tableau.router)         # dataset/AI/sync visualizations: /api/tableau/stats
 app.include_router(labeling.router)        # multi-worker table claiming: /api/labeling/*
 app.include_router(public_crops.router)     # signed public crop serving (Lens): /public/crop/*
+app.include_router(it_auth.router)          # IT gate login: /it, /api/it/*
 
 
 # ---------------------------------------------------------------------------

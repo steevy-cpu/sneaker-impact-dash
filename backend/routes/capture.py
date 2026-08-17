@@ -67,6 +67,7 @@ def table_photo_to_dict(row: sqlite3.Row) -> dict:
         "total_end_of_life":   row["total_end_of_life"],
         "casuals":             row["casuals"],
         "notes":               _col(row, "notes"),
+        "capture_mode":        _col(row, "capture_mode") or "shoes",
         "status":              row["status"],
         "error_message":       row["error_message"],
         "num_pairs":           row["num_pairs"],
@@ -190,16 +191,17 @@ def _has_box_data(good, eol, casuals, weight) -> bool:
 
 
 def _insert_table_photo(conn, tp_id, *, operator_id, batch_id, image_path,
-                        barcode, weight, good, eol, casuals, notes=None):
+                        barcode, weight, good, eol, casuals, notes=None,
+                        capture_mode="shoes", insoles_text=None):
     conn.execute(
         """INSERT INTO table_photos (
             id, batch_id, operator_id, image_path, barcode,
             weight_of_box, total_good_sneakers, total_end_of_life, casuals,
-            notes, status, num_pairs, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)""",
+            notes, capture_mode, insoles_text, status, num_pairs, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)""",
         (tp_id, batch_id, operator_id, image_path, barcode,
-         weight, good or 0, eol or 0, casuals or 0, notes,
-         datetime.now().isoformat()),
+         weight, good or 0, eol or 0, casuals or 0, notes, capture_mode,
+         insoles_text, datetime.now().isoformat()),
     )
     conn.commit()
 
@@ -297,21 +299,63 @@ async def capture(
     operator_id:         Optional[str]   = Form(None),
     batch_id:            Optional[str]   = Form(None),
     overwrite_of:        Optional[str]   = Form(None),
+    capture_mode:        str             = Form("shoes"),
+    insoles_text:        Optional[str]   = Form(None),
     conn:                sqlite3.Connection = Depends(get_db),
 ):
     """Store one whole-table photo + box metadata as a `pending` table_photos
     row, ready for background processing (the worker arrives in P3). Validation:
     a readable image AND at least one box field > 0. A duplicate barcode is
     refused with 409 unless `overwrite_of` names the previous entry to replace
-    (the frontend's overwrite/cancel modal drives that)."""
+    (the frontend's overwrite/cancel modal drives that).
+
+    capture_mode='insoles' is the station's insole-only flow: no shoe counts
+    (the good/eol/casuals inputs are hidden), so the box-data rule is replaced
+    by a barcode requirement — the whole point of an insole run is the per-brand
+    pair/single counts landing on that shipment's Airtable row."""
     weight_of_box = _clean_weight(weight_of_box)
     barcode = _clean_barcode(barcode)
     notes = _clean_note(notes)
-    if not _has_box_data(total_good_sneakers, total_end_of_life, casuals, weight_of_box):
+    capture_mode = (capture_mode or "shoes").strip().lower()
+    if capture_mode not in ("shoes", "insoles"):
+        raise HTTPException(status_code=422,
+                            detail="capture_mode must be 'shoes' or 'insoles'")
+    if capture_mode == "insoles":
+        if not barcode or len(barcode) < MIN_DUP_BARCODE_LEN:
+            raise HTTPException(
+                status_code=422,
+                detail="Insole capture requires a scanned barcode")
+    elif not _has_box_data(total_good_sneakers, total_end_of_life, casuals, weight_of_box):
         raise HTTPException(
             status_code=422,
             detail="At least one box field (good / end-of-life / casuals / weight) must be > 0",
         )
+    # Insoles in a COMBINED box: the operators record counts in the NOTES field
+    # ("25 pair currex") — the lenient extractor pulls brand counts out of the
+    # prose and ignores everything else, and NEVER blocks a capture (notes are
+    # free-form; a note it can't read is just a note). What it finds is stored
+    # canonically in insoles_text (round-trips through the strict parser, so
+    # tableau recounts it exactly); the raw note is the audit trail. The
+    # explicit insoles_text field is kept for API compatibility and still uses
+    # the strict parser (that path DID promise validation).
+    from backend.utils.insole_text import (canonical_insole_text,
+                                           extract_insole_counts,
+                                           parse_insole_text,
+                                           summaries_from_parse)
+    insoles_text = (insoles_text or "").strip()[:120] or None
+    insole_counts = None
+    if insoles_text:
+        insole_counts = parse_insole_text(insoles_text)
+        if insole_counts is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Couldn't read the insole text — try like "
+                       "'2 currex pairs, 1 superfeet single'")
+        notes = ((notes + "\n") if notes else "") + f"Insoles: {insoles_text}"
+    elif capture_mode == "shoes" and notes:
+        insole_counts = extract_insole_counts(notes)
+        if insole_counts:
+            insoles_text = canonical_insole_text(insole_counts)[:120]
     # Duplicate backstop BEFORE any Pillow work — a refused duplicate submit is
     # one indexed SELECT, cheaper than a normal capture, never a slowdown.
     if not overwrite_of:
@@ -356,7 +400,7 @@ async def capture(
         conn, tp_id, operator_id=operator_id, batch_id=batch_id,
         image_path=get_table_photo_url(tp_id), barcode=barcode, weight=weight_of_box,
         good=total_good_sneakers, eol=total_end_of_life, casuals=casuals,
-        notes=notes,
+        notes=notes, capture_mode=capture_mode, insoles_text=insoles_text,
     )
     # New row is in — NOW replace the previous entry (its outbox row dies in the
     # cascade; the fresh _enqueue_outbox below re-syncs the new box data).
@@ -365,9 +409,22 @@ async def capture(
     # The shipment lookup is a blocking Airtable call (up to 8s) — threadpool
     # it for the same reason as the Pillow work above.
     await run_in_threadpool(_attach_shipment, conn, tp_id, barcode)
-    _enqueue_outbox(conn, tp_id, barcode, {"weight": weight_of_box, "good": total_good_sneakers,
-                                           "eol": total_end_of_life, "casuals": casuals,
-                                           "notes": notes})
+    if capture_mode == "insoles":
+        # An insole box has no shoe counts: None keeps those keys out of the
+        # Airtable payload entirely (see outbox._fields), so an insole capture
+        # can never zero a shipment's Good/EOL/Casuals. Weight still syncs —
+        # it's either the Airtable value round-tripped or operator-corrected.
+        box = {"weight": weight_of_box, "good": None, "eol": None,
+               "casuals": None, "notes": notes}
+    else:
+        box = {"weight": weight_of_box, "good": total_good_sneakers,
+               "eol": total_end_of_life, "casuals": casuals, "notes": notes}
+        if insole_counts:
+            # Manual counts are known NOW (no engine wait): they ride out with
+            # the stage-1 payload. Only mentioned brands get a text — a manual
+            # entry never zeroes a column it didn't talk about.
+            box.update(summaries_from_parse(insole_counts))
+    _enqueue_outbox(conn, tp_id, barcode, box)
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
     return table_photo_to_dict(row)
 

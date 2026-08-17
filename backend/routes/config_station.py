@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from backend.database import get_db
 from backend.services import camera_control as cam
+from backend.services import camera_persist
 
 router = APIRouter(prefix="/api", tags=["Config"])
 
@@ -95,6 +96,9 @@ def camera_set_control(body: ControlSet):
     ok = cam.set_control(body.device, body.name, body.value)
     if not ok:
         raise HTTPException(status_code=400, detail=f"Could not set {body.name}={body.value}")
+    # Persist so the nightly station power-off can't revert it (the re-apply
+    # worker restores saved values each morning).
+    camera_persist.save_control(body.device, body.name, body.value)
     return {"ok": True, "device": body.device, "name": body.name, "value": body.value}
 
 
@@ -102,6 +106,7 @@ def camera_set_control(body: ControlSet):
 def camera_reset(device: str = Body(..., embed=True)):
     if not cam.available():
         raise HTTPException(status_code=503, detail="v4l2-ctl not available on the server")
+    camera_persist.clear_saved(device)
     return {"reset": cam.reset_controls(device)}
 
 

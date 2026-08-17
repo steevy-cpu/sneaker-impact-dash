@@ -22,7 +22,7 @@ from backend.config import AUDIT_WINDOW_DAYS, IMAGES_DIR
 from backend.database import get_db
 from backend.models import PairReviewUpdate
 from backend.utils.brands import canonical_brand
-from backend.utils.models import clean_model, model_key
+from backend.utils.models import clean_model, model_key, normalize_labels
 from backend.utils.sources import source_family
 
 router = APIRouter(prefix="/api/pairs", tags=["Pairs"])
@@ -440,6 +440,11 @@ def review_pair(
     if not row:
         raise HTTPException(status_code=404, detail=f"Pair '{pair_id}' not found")
 
+    # Human labels get the same write-time cleanup as predictions ([[brand-model-
+    # dedup]] Phase B): a typed "ultraboost" or "ASICS gel-kayano 28" stores as
+    # the canonical spelling. None ('keep AI value') and '' pass through as-is.
+    final_make, final_model = normalize_labels(data.final_make, data.final_model)
+
     # final_color/label_action/sample_mode come from the gold-labeling page; the
     # live Pairs Review page omits them (arrive as None) so its behaviour is
     # unchanged. sample_mode='random' rows feed the unbiased accuracy meter.
@@ -453,7 +458,7 @@ def review_pair(
                notes         = ?,
                sample_mode   = ?
            WHERE id = ?""",
-        (data.final_make, data.final_model, data.final_color, data.label_action,
+        (final_make, final_model, data.final_color, data.label_action,
          data.review_status, data.notes, data.sample_mode, pair_id),
     )
     conn.commit()

@@ -48,6 +48,10 @@ CAMERA_SSH_OPTS = os.getenv(
     "CAMERA_SSH_OPTS",
     "-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new",
 )
+# The station powers off nightly and its USB camera forgets all v4l2 controls
+# (brightness back to hardware default 32); saved settings are re-applied on
+# this interval by camera_persist. 0 disables the re-apply worker.
+CAMERA_REAPPLY_SECONDS = int(os.getenv("CAMERA_REAPPLY_SECONDS", "300"))
 
 # --- Local identification engine (sneaker_impact_training submodule) --------
 # The background worker (P3) runs the pipeline (segment -> pair -> color ->
@@ -79,6 +83,10 @@ ENGINE_LOCAL_MODEL_ID = os.getenv("ENGINE_LOCAL_MODEL_ID", "0") not in ("0", "fa
 # YOLOE detection masks). On by default; adds ~4-6s/photo. Set =0 to use the
 # detection masks (faster, looser crops).
 ENGINE_CROP_MASK_SAM2 = os.getenv("ENGINE_CROP_MASK_SAM2", "1") not in ("0", "false", "False", "")
+# Insole capture mode: linear brand head (Currex/Superfeet/unknown) over the
+# same DINOv2 embedder the pairing uses. Trained in ~/Documents/insole-main;
+# retraining there and copying the .pt here is the whole deploy.
+ENGINE_INSOLE_HEAD = Path(os.getenv("ENGINE_INSOLE_HEAD", str(BASE_DIR / "insole_head.pt")))
 ENGINE_OLLAMA_MODEL = os.getenv("ENGINE_OLLAMA_MODEL", "qwen2.5vl:32b")
 ENGINE_OLLAMA_URL   = os.getenv("ENGINE_OLLAMA_URL", "http://localhost:11434")
 ENGINE_MODEL_TIMEOUT = int(os.getenv("ENGINE_MODEL_TIMEOUT", "240"))  # per-pair VLM call
@@ -104,6 +112,10 @@ AUTO_APPROVE_CONF = float(os.getenv("AUTO_APPROVE_CONF", "0.80"))
 # Three bands: >=AUTO_APPROVE_CONF auto-approve; IDENTIFY_MIN_CONF..AUTO_APPROVE
 # report + human review; <IDENTIFY_MIN_CONF -> unknown.
 IDENTIFY_MIN_CONF = float(os.getenv("IDENTIFY_MIN_CONF", "0.60"))
+# Tableau display: brands/models with fewer than this many pairs are rolled into
+# a single "Other (N ...)" row at the end of the list ([[brand-model-dedup]] —
+# one-off Gemini misreads made the brand/model lists look enormous). 0/1 = off.
+TABLEAU_MIN_COUNT = int(os.getenv("TABLEAU_MIN_COUNT", "3"))
 # Minimum MAKE/brand confidence for a CLOUD prediction to be exported to
 # label_data. Local auto-approve already clears AUTO_APPROVE_CONF (0.80); cloud
 # answers previously had NO floor, so Gemini's calibrated-low guesses on
@@ -270,3 +282,11 @@ AIRTABLE_NOTES_FIELD = os.getenv("AIRTABLE_NOTES_FIELD", "").strip()
 # never lost if the shipment is imported AFTER it was scanned). How often the
 # background retry worker re-attempts pending rows.
 OUTBOX_RETRY_SECONDS = int(os.getenv("OUTBOX_RETRY_SECONDS", "300"))  # 5 min
+
+# IT gate: only Capture / Tableau / Config are public; every other page and API
+# needs a login at /it. DISABLED while IT_PASSWORD is unset (site fully open,
+# exactly the pre-gate behavior) — set it in .env and restart to turn on.
+# Sessions are stateless signed cookies (see backend/routes/it_auth.py), so
+# changing the password logs everyone out.
+IT_PASSWORD      = os.getenv("IT_PASSWORD", "")
+IT_SESSION_HOURS = int(os.getenv("IT_SESSION_HOURS", "12"))

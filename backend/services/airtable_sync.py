@@ -183,15 +183,36 @@ def sync_enabled():
     return AIRTABLE_SYNC_ENABLED and bool(AIRTABLE_API_KEY and AIRTABLE_BASE_ID)
 
 
+def insole_summaries_from_pairs(pairs):
+    """Aggregate an insole run into the two Airtable column texts:
+    {'insoles_currex': '1 pair, 2 singles', 'insoles_superfeet': '0 pairs, ...'}.
+
+    Pairs vs singles by pair_score (set = a true pair, NULL = a single — the
+    singles get grinded, which is why the split matters). Unknown-brand insoles
+    are counted in neither column: they stay in the dash for review and never
+    reach Airtable. Both columns are always written for an insole run, zeros
+    included, so an insole shipment shows an explicit result."""
+    from backend.utils.insole_text import format_insole_counts
+    counts = {"currex": [0, 0], "superfeet": [0, 0]}   # brand -> [pairs, singles]
+    for p in pairs:
+        mk = str(p.get("final_make") or p.get("make") or "").strip().lower()
+        if mk in counts:
+            counts[mk][0 if p.get("pair_score") is not None else 1] += 1
+    return {"insoles_currex": format_insole_counts(*counts["currex"]),
+            "insoles_superfeet": format_insole_counts(*counts["superfeet"])}
+
+
 def brand_summary_from_pairs(pairs):
     """Aggregate makes into 'Nike: 3, Adidas: 2' (skips unknown), most-common
     first. Brands are canonicalized so case/alias variants (ASICS vs Asics) merge
-    into one entry instead of 'ASICS: 2, Asics: 2'."""
-    from backend.utils.brands import canonical_brand
+    into one entry instead of 'ASICS: 2, Asics: 2'. Insole brands (Currex,
+    Superfeet, …) are excluded: their counts are entered manually at capture and
+    live in the Insoles_* columns, so counting them here would double-count."""
+    from backend.utils.brands import canonical_brand, is_insole_brand
     counts = {}
     for p in pairs:
         mk = canonical_brand(p.get("final_make") or p.get("make"))
-        if mk:
+        if mk and not is_insole_brand(mk):
             counts[mk] = counts.get(mk, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     return ", ".join(f"{k}: {v}" for k, v in ordered)

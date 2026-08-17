@@ -31,21 +31,30 @@ def _now():
 
 def enqueue(conn, table_photo_id, barcode, box):
     """Save one capture's box data to the outbox (status pending). Idempotent by
-    table_photo_id. No-op without a usable barcode (nothing to match later)."""
+    table_photo_id. No-op without a usable barcode (nothing to match later).
+
+    box may carry insoles_currex / insoles_superfeet texts (combined boxes:
+    the operator's parsed manual counts, known at capture time). Insole-ONLY
+    captures leave them None here — the engine fills them at stage 2 via
+    set_insole_summaries."""
     match = normalize_barcode(barcode, SHIPMENT_BARCODE_TRIM)
     if not match:
         return False
     conn.execute(
         """INSERT INTO airtable_outbox
              (table_photo_id, match_barcode, full_barcode, good, eol, casuals,
-              weight, notes, status, attempts, created_at)
-           VALUES (?,?,?,?,?,?,?,?, 'pending', 0, ?)
+              weight, notes, insoles_currex, insoles_superfeet,
+              status, attempts, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?, 'pending', 0, ?)
            ON CONFLICT(table_photo_id) DO UPDATE SET
              match_barcode=excluded.match_barcode, full_barcode=excluded.full_barcode,
              good=excluded.good, eol=excluded.eol, casuals=excluded.casuals,
-             weight=excluded.weight, notes=excluded.notes, status='pending'""",
+             weight=excluded.weight, notes=excluded.notes,
+             insoles_currex=excluded.insoles_currex,
+             insoles_superfeet=excluded.insoles_superfeet, status='pending'""",
         (table_photo_id, match, barcode, box.get("good"), box.get("eol"),
-         box.get("casuals"), box.get("weight"), box.get("notes"), _now()),
+         box.get("casuals"), box.get("weight"), box.get("notes"),
+         box.get("insoles_currex"), box.get("insoles_superfeet"), _now()),
     )
     conn.commit()
     return True
@@ -59,6 +68,21 @@ def set_brand_summary(conn, table_photo_id, summary):
     conn.execute(
         "UPDATE airtable_outbox SET brand_summary=?, status='pending' WHERE table_photo_id=?",
         (summary, table_photo_id),
+    )
+    conn.commit()
+
+
+def set_insole_summaries(conn, table_photo_id, summaries):
+    """Stage 2, insole runs: attach the per-brand pairs/singles texts (from
+    insole_summaries_from_pairs) and re-arm the row. The shoe brand_summary
+    stays untouched — an insole shipment never writes 'Brand Summary'."""
+    if not summaries:
+        return
+    conn.execute(
+        "UPDATE airtable_outbox SET insoles_currex=?, insoles_superfeet=?, "
+        "status='pending' WHERE table_photo_id=?",
+        (summaries.get("insoles_currex"), summaries.get("insoles_superfeet"),
+         table_photo_id),
     )
     conn.commit()
 
@@ -83,6 +107,13 @@ def _fields(row):
         f["Casual/Mixed"] = int(row["casuals"])
     if row["brand_summary"]:
         f["Brand Summary"] = row["brand_summary"]
+    # Insole-capture columns. The Airtable fields are capitalized
+    # ("Insoles_currex" — verified via the metadata API 2026-07-27); the local
+    # DB columns are lowercase. keys() guard: rows from a pre-migration DB.
+    for col, field in (("insoles_currex", "Insoles_currex"),
+                       ("insoles_superfeet", "Insoles_superfeet")):
+        if col in row.keys() and row[col]:
+            f[field] = row[col]
     return f
 
 

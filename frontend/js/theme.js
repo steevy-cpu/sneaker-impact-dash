@@ -42,13 +42,34 @@
 
         // Mode badge: reflect the REAL backend mode (APP_MODE) instead of the
         // hardcoded "SIMULATION MODE" placeholder. One place, every page.
+        // The same response carries the IT-gate state (it_gate / it_authed),
+        // which shows or hides the gated nav links — one fetch for both.
         var badge = document.getElementById("mode-badge");
-        if (badge) {
-            fetch("/api/health").then(function (r) { return r.json(); }).then(function (d) {
-                var mode = (d && d.mode) ? String(d.mode) : "actual";
+        fetch("/api/health").then(function (r) { return r.json(); }).then(function (d) {
+            if (badge && d && d.mode) {
+                var mode = String(d.mode);
                 badge.textContent = mode.toUpperCase() + " MODE";
                 badge.className = "mode-badge " + (mode === "simulation" ? "simulation" : "actual");
-            }).catch(function () { /* leave the static badge if health is unreachable */ });
-        }
+            }
+            if (d && d.it_authed) {
+                document.body.classList.add("it-authed");
+                // Only offer logout when the gate is actually on (it_authed is
+                // true for everyone while IT_PASSWORD is unset).
+                var toggle = document.getElementById("theme-toggle");
+                if (d.it_gate && toggle && !document.getElementById("it-logout")) {
+                    var out = document.createElement("button");
+                    out.id = "it-logout";
+                    out.className = "it-logout";
+                    out.title = "You are in IT mode on this browser";
+                    out.textContent = "IT · Log out";
+                    out.addEventListener("click", function () {
+                        fetch("/api/it/logout", { method: "POST" }).finally(function () {
+                            location.href = "/frontend/tableau.html";
+                        });
+                    });
+                    toggle.parentNode.insertBefore(out, toggle);
+                }
+            }
+        }).catch(function () { /* leave the static badge if health is unreachable */ });
     });
 }());

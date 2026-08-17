@@ -68,9 +68,15 @@ def _cf_delete(img_id):
 def _lens(url):
     """Bright Data -> Google Lens on a public image URL. Returns parsed dict.
     Bright Data intermittently returns a non-JSON/empty body (~20% in testing),
-    so retry once on a JSON-decode failure before giving up."""
+    so retry once on a JSON-decode failure before giving up.
+
+    hl/gl pin the Lens page to the English/US layout. Without them Google
+    serves the proxy exit's locale, and since ~2026-07-17 a localized page
+    variant trips Bright Data's block detector for most images ("reject
+    element found" → empty 200 body); the en/US layout parses fine. Verified
+    2026-07-20 on crops that failed deterministically without the pin."""
     lens_url = (f"https://lens.google.com/uploadbyurl"
-                f"?url={urllib.parse.quote(url, safe='')}&brd_json=html")
+                f"?url={urllib.parse.quote(url, safe='')}&hl=en&gl=US&brd_json=html")
     payload = {"zone": BRIGHTDATA_ZONE, "url": lens_url, "format": "raw"}
     headers = {"Authorization": f"Bearer {BRIGHTDATA_BEARER}",
                "Content-Type": "application/json"}
@@ -81,8 +87,11 @@ def _lens(url):
         r.raise_for_status()
         try:
             return r.json()
-        except ValueError as exc:                       # non-JSON body → retry once
-            last = exc
+        except ValueError:                              # non-JSON body → retry once
+            brd = r.headers.get("x-brd-error")
+            last = RuntimeError(
+                f"Bright Data non-JSON body"
+                + (f" ({brd}, brd_status {r.headers.get('x-brd-status-code')})" if brd else ""))
     raise last
 
 

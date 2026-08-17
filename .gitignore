@@ -75,3 +75,4 @@ certs/
 
 # Timestamped DB backups (e.g. sneakers.db.bak_pre_*_20260629_060324)
 sneakers.db.bak_*
+label_data_sidecars_bak_*.tar.gz

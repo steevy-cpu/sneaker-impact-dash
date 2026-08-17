@@ -55,13 +55,31 @@ def _cloud_identify_tiered(crop_path):
                 and res["model_confidence"] >= IDENTIFY_MIN_CONF):
             res["model"] = "unknown"
     return res
+from backend.utils.brands import is_insole_brand
 from backend.utils.id_generator import generate_pair_id
+from backend.utils.models import normalize_labels
 
 
 def _known(name, conf, threshold):
     """True when a prediction is a real (non-'unknown') label at >= threshold."""
     return (bool(name) and str(name).lower() != "unknown"
             and isinstance(conf, (int, float)) and conf >= threshold)
+
+
+def _normalize_st(st):
+    """Write-time label cleanup on a pair state ([[brand-model-dedup]] Phase B):
+    canonical brand + canonically-spelled, brand-stripped model. Called after
+    every make/model assignment (local, cache hit, cloud) so the cache write-back,
+    DB row, and label export all store the same clean spelling. The original
+    strings are kept on the state ONLY when normalization changed them (-> the
+    raw_make/raw_model audit columns; NULL means stored == predicted)."""
+    make, model = normalize_labels(st["make"], st["model"])
+    st["raw_make"] = st["make"] if make != st["make"] else None
+    st["raw_model"] = st["model"] if model != st["model"] else None
+    st["make"], st["model"] = make, model
+    p = st.get("p")
+    if isinstance(p, dict):
+        p["make"], p["model"] = make, model
 
 
 def _image_fs_path(image_url: str):
@@ -165,8 +183,10 @@ class EngineWorker:
         """Atomically claim the oldest pending photo (pending -> processing)."""
         conn = get_connection()
         try:
+            # capture_mode selects the engine branch in _process: NULL/'shoes'
+            # -> the shoe pipeline, 'insoles' -> SAM2 + insole_head brand.
             row = conn.execute(
-                "SELECT id, image_path, barcode FROM table_photos "
+                "SELECT id, image_path, barcode, capture_mode FROM table_photos "
                 "WHERE status = 'pending' AND image_path IS NOT NULL "
                 "ORDER BY created_at LIMIT 1"
             ).fetchone()
@@ -190,16 +210,22 @@ class EngineWorker:
             if cur.rowcount == 0:
                 return None   # another worker is busy, or claimed this row first
             return {"id": row["id"], "image_path": row["image_path"],
-                    "barcode": row["barcode"]}
+                    "barcode": row["barcode"],
+                    "capture_mode": row["capture_mode"]}
         finally:
             conn.close()
 
     def _process(self, job):
         tp_id = job["id"]
+        # Insole capture: same claim/retry/DB machinery, different engine
+        # branch — and no cloud identify, no seen-shoe cache, no label export
+        # (those are shoe-trained; insole crops would poison them).
+        insole = (job.get("capture_mode") or "shoes") == "insoles"
         conn = get_connection()
         try:
             fs_path = _image_fs_path(job["image_path"])
-            pairs = process_table_photo(tp_id, str(fs_path))
+            pairs = process_table_photo(
+                tp_id, str(fs_path), mode="insoles" if insole else "shoes")
 
             # Phase 1 — compute everything WITHOUT touching the DB. Cloud
             # identify calls take seconds each; doing them inside a write
@@ -236,6 +262,7 @@ class EngineWorker:
                     "emb": p.get("embedding"), "emb_name": p.get("embedder"),
                     "shoe_conf": p.get("shoe_confidence"),
                 }
+                _normalize_st(st)               # local-pipeline labels
                 # SHOENESS GATE: a pair the engine's CLIP scored below the floor
                 # is a non-shoe (blower/box/bag) -> don't pay for a cloud call and
                 # don't let it into label_data. Fail-safe: no score / gate off ->
@@ -278,13 +305,15 @@ class EngineWorker:
                         st["source"] = f"cache:{hit.get('source')}:{sim}"
                         st["sources"] = [st["source"]]
                         p["make"], p["model"] = st["make"], st["model"]
+                        _normalize_st(st)       # old cache rows may hold raw spellings
                         st["from_cache"] = True
                         print(f"[worker] {tp_id} pair {idx}: cache hit -> "
                               f"{st['make']}/{st['model']} (sim {sim}, "
                               f"agree {hit.get('agree')}/{hit.get('k')})")
 
                 st["needs_cloud"] = bool(
-                    not local_good and not st["from_cache"]
+                    not insole
+                    and not local_good and not st["from_cache"]
                     and st["img_file"] and cloud_enabled() and st["is_shoe"])
                 states.append(st)
 
@@ -319,15 +348,20 @@ class EngineWorker:
                         st["sources"] = [cloud["source"]]
                         st["source"] = cloud["source"]
                         st["p"]["make"], st["p"]["model"] = st["make"], st["model"]
+                        _normalize_st(st)       # before write-back: cache stores clean
                         print(f"[worker] {tp_id} pair {idx}: cloud -> "
                               f"{st['make']}/{st['model']}")
                         # WRITE-BACK (anti-poisoning gate): a cached label is
                         # re-served to every future look-alike, so the BRAND must
-                        # clear the brand bar and the MODEL its floor.
+                        # clear the brand bar and the MODEL its floor — and must
+                        # not be an insole maker (insoles on a shoe table are
+                        # counted manually; caching them re-serves insole labels
+                        # to future crops).
                         emb, emb_name = st["emb"], st["emb_name"]
                         writeback_ok = (
                             _known(st["make"], st["mk_c"], SEEN_SHOE_WRITEBACK_CONF)
-                            and _known(st["model"], st["md_c"], SEEN_SHOE_WRITEBACK_MODEL_CONF))
+                            and _known(st["model"], st["md_c"], SEEN_SHOE_WRITEBACK_MODEL_CONF)
+                            and not is_insole_brand(st["make"]))
                         if SEEN_SHOE_ENABLED and emb and emb_name and writeback_ok:
                             try:
                                 shoe_memory.remember(
@@ -358,6 +392,11 @@ class EngineWorker:
                 color, color_c = st["color"], st["color_c"]
                 make, mk_c, model, md_c = st["make"], st["mk_c"], st["model"], st["md_c"]
                 source = st["source"]
+                if not insole and is_insole_brand(make):
+                    print(f"[worker] {tp_id} pair {idx}: insole brand '{make}' on a "
+                          f"shoe table -> kept for review, excluded from "
+                          f"summary/export/cache (counts come from the capture "
+                          f"text field)", flush=True)
                 # Color is local-only; accept it above its own lower floor, else
                 # mark unknown (don't let a weak color guess into the data/name).
                 if not _known(color, color_c, LOCAL_COLOR_CONF_MIN):
@@ -366,19 +405,22 @@ class EngineWorker:
                 used_cloud = source != "local"
                 # Auto-approve high-confidence pairs (local or cloud): no human
                 # review and straight into the curated label_data training set.
+                # Insoles have no model concept — brand confidence alone decides
+                # (unknown-brand insoles stay PENDING for human review).
                 confident = (
                     _known(make, mk_c, AUTO_APPROVE_CONF)
-                    and _known(model, md_c, AUTO_APPROVE_CONF)
+                    and (insole or _known(model, md_c, AUTO_APPROVE_CONF))
                 )
                 review_status = "NOT_REQUIRED" if confident else "PENDING"
                 final_make = make if confident else None
-                final_model = model if confident else None
+                final_model = model if (confident and not insole) else None
 
                 prepared.append(
                     (tp_id, st["img_url"], json.dumps(p.get("bbox")), p.get("pair_score"),
                      color, color_c, make, mk_c, model, md_c,
                      json.dumps(st["sources"]),
-                     review_status, final_make, final_model, source, now),
+                     review_status, final_make, final_model, source, now,
+                     st.get("raw_make"), st.get("raw_model")),
                 )
                 if confident:
                     approved += 1
@@ -391,7 +433,8 @@ class EngineWorker:
                 has_label = (make and str(make).lower() != "unknown"
                              and model and str(model).lower() != "unknown")
                 cloud_ok = used_cloud and _known(make, mk_c, LABEL_EXPORT_MIN_CONF)
-                if (st["img_file"] and has_label and (confident or cloud_ok)
+                if (not insole
+                        and st["img_file"] and has_label and (confident or cloud_ok)
                         and st["is_shoe"] and not st["from_cache"]):
                     export_label(str(PAIRS_DIR / st["img_file"]),
                                  color=color, make=make, model=model,
@@ -410,8 +453,8 @@ class EngineWorker:
                         detected_color, color_confidence,
                         make, make_confidence, model, model_confidence,
                         model_sources, review_status, final_make, final_model,
-                        prediction_source, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        prediction_source, created_at, raw_make, raw_model
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (pid, *values),
                 )
             # num_pairs = TRUE pairs only (pair_score set); a single-shoe record
@@ -425,25 +468,44 @@ class EngineWorker:
                 (n_true_pairs, now, tp_id),
             )
             conn.commit()
-            print(f"[worker] {tp_id}: {n_true_pairs} pair(s) + {n_singles} single(s) "
+            kind = "insole" if insole else "pair"
+            print(f"[worker] {tp_id}: {n_true_pairs} {kind}(s) + {n_singles} single(s) "
                   f"({approved} auto-approved, {dropped_nonshoe} non-shoe dropped) "
                   f"-> completed.")
+            if insole:
+                # Per-brand pairs/singles breakdown in the journal — this is the
+                # number the Airtable insoles_* columns will carry (next stage).
+                counts = {}
+                for v in prepared:
+                    b = (v[6] or "unknown")
+                    slot = "pairs" if v[3] is not None else "singles"
+                    counts.setdefault(b, {"pairs": 0, "singles": 0})[slot] += 1
+                print(f"[worker] {tp_id}: insole brand counts: {counts}",
+                      flush=True)
 
             # Stage 2 (best-effort, isolated so it can never flip the job to
-            # 'failed'): attach the brand summary to the durable outbox row and
-            # try to send it. If the shipment isn't in Airtable yet, it stays
-            # queued and the retry worker delivers it later. No-op unless a
-            # barcode was scanned.
+            # 'failed'): attach the results summary to the durable outbox row
+            # and try to send it. If the shipment isn't in Airtable yet, it
+            # stays queued and the retry worker delivers it later. No-op unless
+            # a barcode was scanned. Shoe runs write Brand Summary; insole runs
+            # write the insoles_currex/insoles_superfeet texts instead.
             try:
-                from backend.services.airtable_sync import brand_summary_from_pairs
-                from backend.services.airtable_outbox import set_brand_summary, try_one_async
+                from backend.services.airtable_sync import (
+                    brand_summary_from_pairs, insole_summaries_from_pairs)
+                from backend.services.airtable_outbox import (
+                    set_brand_summary, set_insole_summaries, try_one_async)
                 if job.get("barcode"):
-                    summary = brand_summary_from_pairs(pairs)
-                    if summary:
-                        set_brand_summary(conn, tp_id, summary)
+                    if insole:
+                        set_insole_summaries(conn, tp_id,
+                                             insole_summaries_from_pairs(pairs))
                         try_one_async(tp_id)
+                    else:
+                        summary = brand_summary_from_pairs(pairs)
+                        if summary:
+                            set_brand_summary(conn, tp_id, summary)
+                            try_one_async(tp_id)
             except Exception as exc:                   # noqa: BLE001 - never affect status
-                print(f"[worker] outbox brand-summary error: {exc}")
+                print(f"[worker] outbox summary error: {exc}")
         except Exception as exc:                       # noqa: BLE001 - never crash worker
             # Engine killed by a signal (returncode < 0, e.g. SIGSEGV from the
             # flaky GPU/RAM stack) = transient machine trouble, not a bad photo:
