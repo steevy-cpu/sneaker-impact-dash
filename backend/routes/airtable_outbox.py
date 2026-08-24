@@ -50,6 +50,19 @@ def fedex_lookup(tp_id: str):
     return fedex_track.track(tracking)
 
 
+@router.delete("/{tp_id}", summary="Delete one pending row (give up on it)")
+def delete_outbox_row(tp_id: str):
+    """Remove a pending row the operator has given up on (typically a bad
+    barcode scan that will never match a shipment). Synced rows are history and
+    can't be deleted. The table photo and its pairs are untouched. Rows still
+    pending after OUTBOX_PURGE_DAYS are purged automatically by the retry
+    worker — this is the manual version of the same give-up."""
+    if not outbox.delete_one(tp_id):
+        raise HTTPException(status_code=404,
+                            detail=f"No PENDING outbox row for '{tp_id}' (synced rows can't be deleted)")
+    return {"deleted": tp_id}
+
+
 @router.post("/flush", summary="Retry all pending rows now")
 def flush_outbox():
     if not sync_enabled():

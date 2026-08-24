@@ -318,6 +318,11 @@ const api = {
         return apiFetch(`/api/airtable-outbox/${encodeURIComponent(tpId)}/fedex`);
     },
 
+    /** Delete one pending outbox row (give up on syncing it). */
+    deleteAirtableOutbox(tpId) {
+        return apiFetch(`/api/airtable-outbox/${encodeURIComponent(tpId)}`, { method: "DELETE" });
+    },
+
     /** Get a single pair. */
     getPair(id) {
         return apiFetch(`/api/pairs/${encodeURIComponent(id)}`);

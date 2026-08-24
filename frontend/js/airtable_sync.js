@@ -70,6 +70,9 @@ async function load() {
             <td class="text-sm">${canLookup(it)
                 ? `<button class="btn-secondary fedex-btn" data-tp="${esc(it.table_photo_id)}" style="padding:3px 9px;">📦 Check FedEx</button>
                    <span class="fedex-out text-xs text-muted" data-out="${esc(it.table_photo_id)}"></span>`
+                : ""}
+                ${it.status !== "synced"
+                ? `<button class="btn-secondary del-btn" data-tp="${esc(it.table_photo_id)}" title="Give up on this row — remove it from the queue (the capture itself is kept)" style="padding:3px 9px;">🗑</button>`
                 : ""}</td>
             <td class="text-sm text-muted">${it.attempts || 0}</td>
         </tr>`).join("");
@@ -78,6 +81,23 @@ async function load() {
         <tbody>${rows}</tbody></table></div>`;
 
     c.querySelectorAll(".fedex-btn").forEach(btn => btn.addEventListener("click", onFedexLookup));
+    c.querySelectorAll(".del-btn").forEach(btn => btn.addEventListener("click", onDelete));
+}
+
+async function onDelete(e) {
+    const btn = e.currentTarget;
+    const tp = btn.dataset.tp;
+    if (!confirm(`Remove ${tp} from the sync queue?\n\nIts box data will never be sent to Airtable. The capture and its pairs are kept.`))
+        return;
+    btn.disabled = true;
+    try {
+        await api.deleteAirtableOutbox(tp);
+        showToast(`${tp} removed from the queue`, "success", 2500);
+        load();
+    } catch (err) {
+        showToast("Delete failed: " + err.message, "error", 3000);
+        btn.disabled = false;
+    }
 }
 
 async function onFedexLookup(e) {

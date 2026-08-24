@@ -14,10 +14,10 @@ table_photo_id). Fully fail-safe: never raises to the caller; the PATCH is
 idempotent (upsert by barcode), so retries can't duplicate data.
 """
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from backend.config import (AIRTABLE_NOTES_FIELD, OUTBOX_RETRY_SECONDS,
-                            SHIPMENT_BARCODE_TRIM)
+from backend.config import (AIRTABLE_NOTES_FIELD, OUTBOX_PURGE_DAYS,
+                            OUTBOX_RETRY_SECONDS, SHIPMENT_BARCODE_TRIM)
 from backend.database import get_connection
 from backend.services.airtable_sync import get_airtable_sync, sync_enabled
 from backend.services.shipment_lookup import normalize_barcode
@@ -232,6 +232,54 @@ def list_items(status=None, limit=200):
         conn.close()
 
 
+# --- delete / purge ----------------------------------------------------------
+
+def delete_one(table_photo_id):
+    """Delete one PENDING row (operator gave up on it — usually a bad scan).
+    Synced rows are kept as history and can't be deleted here. Returns True if
+    a row was removed."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "DELETE FROM airtable_outbox WHERE table_photo_id=? AND status='pending'",
+            (table_photo_id,))
+        conn.commit()
+        if cur.rowcount:
+            print(f"[outbox] deleted pending row {table_photo_id}")
+        return bool(cur.rowcount)
+    finally:
+        conn.close()
+
+
+def purge_stale(days=None):
+    """Delete pending rows older than `days` (default OUTBOX_PURGE_DAYS) — the
+    shipment never showed up in Airtable, so retrying forever just clutters the
+    queue. Age-based on purpose (see OUTBOX_PURGE_DAYS in config). Returns the
+    list of purged table_photo_ids."""
+    days = OUTBOX_PURGE_DAYS if days is None else days
+    if days <= 0:
+        return []
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT table_photo_id, match_barcode, created_at FROM airtable_outbox "
+            "WHERE status='pending' AND created_at < ?", (cutoff,)).fetchall()
+        if not rows:
+            return []
+        ids = [r["table_photo_id"] for r in rows]
+        conn.execute(
+            "DELETE FROM airtable_outbox WHERE status='pending' AND created_at < ?",
+            (cutoff,))
+        conn.commit()
+        for r in rows:
+            print(f"[outbox] purged {r['table_photo_id']} (barcode "
+                  f"{r['match_barcode']!r}, pending since {r['created_at'][:10]})")
+        return ids
+    finally:
+        conn.close()
+
+
 # --- background retry worker -------------------------------------------------
 
 class _Retrier:
@@ -260,6 +308,7 @@ class _Retrier:
             try:
                 if sync_enabled():
                     flush()
+                purge_stale()
             except Exception as exc:                       # noqa: BLE001 - never die
                 print(f"[outbox] retry loop error: {exc}")
 

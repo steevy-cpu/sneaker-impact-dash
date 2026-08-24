@@ -282,6 +282,12 @@ AIRTABLE_NOTES_FIELD = os.getenv("AIRTABLE_NOTES_FIELD", "").strip()
 # never lost if the shipment is imported AFTER it was scanned). How often the
 # background retry worker re-attempts pending rows.
 OUTBOX_RETRY_SECONDS = int(os.getenv("OUTBOX_RETRY_SECONDS", "300"))  # 5 min
+# Auto-purge: a row still pending after this many days is deleted by the retry
+# worker (the shipment never appeared — usually a bad barcode scan; the table
+# photo and its pairs are untouched). NOT attempts-based: attempts tick every
+# retry interval, so any attempt-count threshold would delete healthy rows that
+# are merely waiting for the FedEx invoice import. 0 disables auto-purge.
+OUTBOX_PURGE_DAYS = int(os.getenv("OUTBOX_PURGE_DAYS", "14"))
 
 # IT gate: only Capture / Tableau / Config are public; every other page and API
 # needs a login at /it. DISABLED while IT_PASSWORD is unset (site fully open,
