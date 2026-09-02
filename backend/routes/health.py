@@ -1,4 +1,5 @@
 import sqlite3
+import time
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -11,12 +12,24 @@ from backend.utils.brands import canonical_brand, norm_key, CANONICAL_BRANDS
 router = APIRouter(prefix="/api", tags=["Health"])
 
 
+# The full-tree walk takes seconds once the image store holds 100k+ files, and
+# theme.js hits /api/health on every page load — so serve a cached size and
+# only re-walk every few minutes.
+_DIR_SIZE_TTL = 300  # seconds
+_dir_size_cache: dict = {}  # path -> (monotonic_ts, size_mb)
+
+
 def _dir_size_mb(path) -> float:
-    """Return total size of a directory tree in megabytes."""
+    """Return total size of a directory tree in megabytes (cached)."""
+    cached = _dir_size_cache.get(path)
+    if cached and time.monotonic() - cached[0] < _DIR_SIZE_TTL:
+        return cached[1]
     if not path.exists():
         return 0.0
     total_bytes = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
-    return round(total_bytes / (1024 * 1024), 2)
+    size = round(total_bytes / (1024 * 1024), 2)
+    _dir_size_cache[path] = (time.monotonic(), size)
+    return size
 
 
 @router.get("/health", summary="System health and stats")
