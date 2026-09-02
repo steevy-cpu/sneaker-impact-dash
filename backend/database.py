@@ -261,6 +261,9 @@ def _add_columns_if_missing(conn: sqlite3.Connection):
         ("pairs", "raw_model", "TEXT"),  # only when normalization CHANGED them (audit
                                          # trail for write-time label cleanup; NULL =
                                          # stored label is exactly what the model said)
+        ("table_photos", "singles", "INTEGER NOT NULL DEFAULT 0"),  # operator-counted
+                                                  # unmatched single shoes in the box
+        ("airtable_outbox", "singles", "INTEGER"),  # pushed to the Airtable "Singles" field
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")

@@ -62,6 +62,7 @@ async function load() {
                 it.good != null ? "✅" + it.good : "",
                 it.eol != null ? "💀" + it.eol : "",
                 it.casuals ? "👟" + it.casuals : "",
+                it.singles ? "🥿" + it.singles : "",
                 it.weight != null ? "⚖️" + it.weight : "",
             ].filter(Boolean).join("  ") || "—"}</td>
             <td class="text-sm">${esc(it.brand_summary || "—")}</td>

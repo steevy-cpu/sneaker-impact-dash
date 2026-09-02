@@ -136,6 +136,8 @@ class AirtableSync:
             fields["End of Life"] = int(box["eol"])
         if box.get("casuals") is not None:
             fields["Casual/Mixed"] = int(box["casuals"])
+        if box.get("singles") is not None:
+            fields["Singles"] = int(box["singles"])
         try:
             action = self._upsert(bc, fields)
             if action is None:

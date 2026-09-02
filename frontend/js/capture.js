@@ -33,6 +33,7 @@
     const capGood = document.getElementById("cap-good");
     const capEol = document.getElementById("cap-eol");
     const capCasuals = document.getElementById("cap-casuals");
+    const capSingles = document.getElementById("cap-singles");
     const capNote = document.getElementById("cap-note");
     const capNoteCount = document.getElementById("cap-note-count");
     const capError = document.getElementById("cap-error");
@@ -94,6 +95,7 @@
             good: parseInt(capGood.value, 10) || 0,
             eol: parseInt(capEol.value, 10) || 0,
             casuals: parseInt(capCasuals.value, 10) || 0,
+            singles: parseInt(capSingles.value, 10) || 0,
             // Optional — a note alone is NOT box data, so validate() ignores it.
             // Insole counts for combined boxes live IN the note ("25 pair
             // currex"); the server extracts them, the preview shows them.
@@ -113,7 +115,7 @@
             capError.style.display = "none";
             return true;
         }
-        if (d.weight <= 0 && d.good <= 0 && d.eol <= 0 && d.casuals <= 0) {
+        if (d.weight <= 0 && d.good <= 0 && d.eol <= 0 && d.casuals <= 0 && d.singles <= 0) {
             capError.textContent = "⚠️ Enter box data first — at least ONE field must be greater than 0";
             capError.style.display = "";
             return false;
@@ -151,7 +153,7 @@
     capNote.addEventListener("input", updateInsolePreview);
 
     function resetFields() {
-        capWeight.value = ""; capGood.value = ""; capEol.value = ""; capCasuals.value = "";
+        capWeight.value = ""; capGood.value = ""; capEol.value = ""; capCasuals.value = ""; capSingles.value = "";
         capNote.value = ""; updateNoteCount(); updateInsolePreview();
         barcodeInput.value = "";
         barcodeStatus.textContent = "Ready for barcode scanning…";
@@ -194,6 +196,7 @@
         fd.append("total_good_sneakers", String(insoleMode ? 0 : d.good));
         fd.append("total_end_of_life", String(insoleMode ? 0 : d.eol));
         fd.append("casuals", String(insoleMode ? 0 : d.casuals));
+        fd.append("singles", String(insoleMode ? 0 : d.singles));
         fd.append("capture_mode", insoleMode ? "insoles" : "shoes");
         if (d.note) fd.append("notes", d.note);
         fd.append("operator_id", OPERATOR_ID);
@@ -317,6 +320,7 @@
         if (existing.total_good_sneakers) bits.push(existing.total_good_sneakers + " good");
         if (existing.total_end_of_life) bits.push(existing.total_end_of_life + " EOL");
         if (existing.casuals) bits.push(existing.casuals + " casuals");
+        if (existing.singles) bits.push(existing.singles + " singles");
         if (existing.num_pairs) bits.push(existing.num_pairs + " pairs");
         dupModalBody.innerHTML =
             '<p style="margin:0 0 10px;">This label was already captured as ' +
@@ -375,6 +379,7 @@
             [capGood, existing.total_good_sneakers],
             [capEol, existing.total_end_of_life],
             [capCasuals, existing.casuals],
+            [capSingles, existing.singles],
             [capNote, existing.notes],
         ];
         let filled = 0;
@@ -512,10 +517,10 @@
 
     /* ---- Enter/Tab advance through the box-data fields ------------------ */
     // After the barcode scan drops focus on Weight, Enter (or Tab) walks the
-    // worker down Weight → Good → End of Life → Casuals without reaching for
-    // the mouse. Enter past the last field just blurs (it does NOT auto-send —
-    // sending is the deliberate USB-button / Capture & Send press).
-    const BOX_ORDER = [capWeight, capGood, capEol, capCasuals];
+    // worker down Weight → Good → End of Life → Casuals → Singles without
+    // reaching for the mouse. Enter past the last field just blurs (it does NOT
+    // auto-send — sending is the deliberate USB-button / Capture & Send press).
+    const BOX_ORDER = [capWeight, capGood, capEol, capCasuals, capSingles];
     BOX_ORDER.forEach((el, i) => {
         el.addEventListener("keydown", (e) => {
             if (e.key !== "Enter" || dupModalOpen) return;   // Tab is handled natively by the browser
@@ -533,7 +538,7 @@
     // The toggle itself is session-sticky (NOT reset after a send): insole
     // boxes arrive in batches, and re-flipping per box invites mistakes.
 
-    const SHOE_COUNT_FIELDS = [capGood, capEol, capCasuals];
+    const SHOE_COUNT_FIELDS = [capGood, capEol, capCasuals, capSingles];
 
     let insoleTextEnabled = false;   // station-config flag: insole_text_field
 

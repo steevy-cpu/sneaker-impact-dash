@@ -109,6 +109,7 @@ class MetadataCreate(BaseModel):
     total_good_sneakers: int             = 0
     total_end_of_life:   int             = 0
     casuals:             int             = 0
+    singles:             int             = 0
     notes:               Optional[str]   = None  # operator's free-text note about the box
     operator_id:         Optional[str]   = None
     batch_id:            Optional[str]   = None
@@ -125,6 +126,7 @@ class TablePhotoResponse(BaseModel):
     total_good_sneakers: int
     total_end_of_life:   int
     casuals:             int
+    singles:             int             = 0
     status:              str
     error_message:       Optional[str]   = None
     num_pairs:           int

@@ -43,17 +43,17 @@ def enqueue(conn, table_photo_id, barcode, box):
     conn.execute(
         """INSERT INTO airtable_outbox
              (table_photo_id, match_barcode, full_barcode, good, eol, casuals,
-              weight, notes, insoles_currex, insoles_superfeet,
+              singles, weight, notes, insoles_currex, insoles_superfeet,
               status, attempts, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?, 'pending', 0, ?)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending', 0, ?)
            ON CONFLICT(table_photo_id) DO UPDATE SET
              match_barcode=excluded.match_barcode, full_barcode=excluded.full_barcode,
              good=excluded.good, eol=excluded.eol, casuals=excluded.casuals,
-             weight=excluded.weight, notes=excluded.notes,
+             singles=excluded.singles, weight=excluded.weight, notes=excluded.notes,
              insoles_currex=excluded.insoles_currex,
              insoles_superfeet=excluded.insoles_superfeet, status='pending'""",
         (table_photo_id, match, barcode, box.get("good"), box.get("eol"),
-         box.get("casuals"), box.get("weight"), box.get("notes"),
+         box.get("casuals"), box.get("singles"), box.get("weight"), box.get("notes"),
          box.get("insoles_currex"), box.get("insoles_superfeet"), _now()),
     )
     conn.commit()
@@ -105,6 +105,10 @@ def _fields(row):
         f["End of Life"] = int(row["eol"])
     if row["casuals"] is not None:
         f["Casual/Mixed"] = int(row["casuals"])
+    # keys() guard: rows from a pre-migration DB (field verified via the
+    # metadata API 2026-09-02: "Singles", number).
+    if "singles" in row.keys() and row["singles"] is not None:
+        f["Singles"] = int(row["singles"])
     if row["brand_summary"]:
         f["Brand Summary"] = row["brand_summary"]
     # Insole-capture columns. The Airtable fields are capitalized

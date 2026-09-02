@@ -66,6 +66,7 @@ def table_photo_to_dict(row: sqlite3.Row) -> dict:
         "total_good_sneakers": row["total_good_sneakers"],
         "total_end_of_life":   row["total_end_of_life"],
         "casuals":             row["casuals"],
+        "singles":             _col(row, "singles") or 0,
         "notes":               _col(row, "notes"),
         "capture_mode":        _col(row, "capture_mode") or "shoes",
         "status":              row["status"],
@@ -155,7 +156,7 @@ def _find_duplicates(conn, cleaned_barcode):
         return []
     rows = conn.execute(
         """SELECT id, created_at, weight_of_box, total_good_sneakers,
-                  total_end_of_life, casuals, status, num_pairs, notes
+                  total_end_of_life, casuals, singles, status, num_pairs, notes
            FROM table_photos WHERE barcode = ?
            ORDER BY created_at DESC, id DESC""", (cleaned_barcode,)).fetchall()
     return [dict(r) for r in rows]
@@ -183,24 +184,25 @@ def _overwrite_previous(conn, overwrite_of, barcode):
         _delete_table_photo_cascade(conn, overwrite_of)
 
 
-def _has_box_data(good, eol, casuals, weight) -> bool:
+def _has_box_data(good, eol, casuals, singles, weight) -> bool:
     """Mirror the desktop rule: at least one box field must be > 0. The note is
     deliberately NOT box data — a note-only submit (no counts, no weight) is
     still refused, so an operator can't queue an empty box by typing a remark."""
-    return any([(good or 0) > 0, (eol or 0) > 0, (casuals or 0) > 0, (weight or 0) > 0])
+    return any([(good or 0) > 0, (eol or 0) > 0, (casuals or 0) > 0,
+                (singles or 0) > 0, (weight or 0) > 0])
 
 
 def _insert_table_photo(conn, tp_id, *, operator_id, batch_id, image_path,
-                        barcode, weight, good, eol, casuals, notes=None,
+                        barcode, weight, good, eol, casuals, singles=0, notes=None,
                         capture_mode="shoes", insoles_text=None):
     conn.execute(
         """INSERT INTO table_photos (
             id, batch_id, operator_id, image_path, barcode,
-            weight_of_box, total_good_sneakers, total_end_of_life, casuals,
+            weight_of_box, total_good_sneakers, total_end_of_life, casuals, singles,
             notes, capture_mode, insoles_text, status, num_pairs, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)""",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)""",
         (tp_id, batch_id, operator_id, image_path, barcode,
-         weight, good or 0, eol or 0, casuals or 0, notes, capture_mode,
+         weight, good or 0, eol or 0, casuals or 0, singles or 0, notes, capture_mode,
          insoles_text, datetime.now().isoformat()),
     )
     conn.commit()
@@ -259,10 +261,10 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
     barcode = _clean_barcode(data.barcode)
     notes = _clean_note(data.notes)
     if not _has_box_data(data.total_good_sneakers, data.total_end_of_life,
-                         data.casuals, weight):
+                         data.casuals, data.singles, weight):
         raise HTTPException(
             status_code=422,
-            detail="At least one box field (good / end-of-life / casuals / weight) must be > 0",
+            detail="At least one box field (good / end-of-life / casuals / singles / weight) must be > 0",
         )
     if not data.overwrite_of:
         dups = _find_duplicates(conn, barcode)
@@ -273,7 +275,7 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
         conn, tp_id, operator_id=data.operator_id, batch_id=data.batch_id,
         image_path=None, barcode=barcode, weight=weight,
         good=data.total_good_sneakers, eol=data.total_end_of_life, casuals=data.casuals,
-        notes=notes,
+        singles=data.singles, notes=notes,
     )
     if data.overwrite_of:
         _overwrite_previous(conn, data.overwrite_of, barcode)
@@ -282,6 +284,7 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
                                                 "good": data.total_good_sneakers,
                                                 "eol": data.total_end_of_life,
                                                 "casuals": data.casuals,
+                                                "singles": data.singles,
                                                 "notes": notes})
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
     return table_photo_to_dict(row)
@@ -295,6 +298,7 @@ async def capture(
     total_good_sneakers: int             = Form(0),
     total_end_of_life:   int             = Form(0),
     casuals:             int             = Form(0),
+    singles:             int             = Form(0),
     notes:               Optional[str]   = Form(None),
     operator_id:         Optional[str]   = Form(None),
     batch_id:            Optional[str]   = Form(None),
@@ -325,10 +329,11 @@ async def capture(
             raise HTTPException(
                 status_code=422,
                 detail="Insole capture requires a scanned barcode")
-    elif not _has_box_data(total_good_sneakers, total_end_of_life, casuals, weight_of_box):
+    elif not _has_box_data(total_good_sneakers, total_end_of_life, casuals,
+                           singles, weight_of_box):
         raise HTTPException(
             status_code=422,
-            detail="At least one box field (good / end-of-life / casuals / weight) must be > 0",
+            detail="At least one box field (good / end-of-life / casuals / singles / weight) must be > 0",
         )
     # Insoles in a COMBINED box: the operators record counts in the NOTES field
     # ("25 pair currex") — the lenient extractor pulls brand counts out of the
@@ -400,7 +405,8 @@ async def capture(
         conn, tp_id, operator_id=operator_id, batch_id=batch_id,
         image_path=get_table_photo_url(tp_id), barcode=barcode, weight=weight_of_box,
         good=total_good_sneakers, eol=total_end_of_life, casuals=casuals,
-        notes=notes, capture_mode=capture_mode, insoles_text=insoles_text,
+        singles=singles, notes=notes, capture_mode=capture_mode,
+        insoles_text=insoles_text,
     )
     # New row is in — NOW replace the previous entry (its outbox row dies in the
     # cascade; the fresh _enqueue_outbox below re-syncs the new box data).
@@ -415,10 +421,11 @@ async def capture(
         # can never zero a shipment's Good/EOL/Casuals. Weight still syncs —
         # it's either the Airtable value round-tripped or operator-corrected.
         box = {"weight": weight_of_box, "good": None, "eol": None,
-               "casuals": None, "notes": notes}
+               "casuals": None, "singles": None, "notes": notes}
     else:
         box = {"weight": weight_of_box, "good": total_good_sneakers,
-               "eol": total_end_of_life, "casuals": casuals, "notes": notes}
+               "eol": total_end_of_life, "casuals": casuals,
+               "singles": singles, "notes": notes}
         if insole_counts:
             # Manual counts are known NOW (no engine wait): they ride out with
             # the stage-1 payload. Only mentioned brands get a text — a manual

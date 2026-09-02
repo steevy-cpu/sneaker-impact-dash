@@ -29,6 +29,7 @@ function boxSummary(t) {
     if (t.total_good_sneakers) bits.push(`✅ ${t.total_good_sneakers}`);
     if (t.total_end_of_life)   bits.push(`💀 ${t.total_end_of_life}`);
     if (t.casuals)             bits.push(`👟 ${t.casuals}`);
+    if (t.singles)             bits.push(`🥿 ${t.singles}`);
     if (t.weight_of_box)       bits.push(`⚖️ ${t.weight_of_box} lb`);
     return bits.join("  ") || "—";
 }
