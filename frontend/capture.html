@@ -205,10 +205,29 @@
     </div>
 </div>
 
+<!-- Hard barcode requirement: shown when Capture & Send is pressed without a
+     scanned/typed tracking barcode — the box could never match its Airtable
+     shipment, so the capture is refused up front. -->
+<div class="modal-overlay" id="nobc-modal" role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal" style="max-width:460px;">
+        <div class="modal-header">🚫 No barcode scanned</div>
+        <div class="modal-body">
+            <p style="margin:0 0 10px;">You didn't scan or enter the box barcode — the capture was <strong>not</strong> sent.</p>
+            <p style="margin:0; color:var(--text-muted); font-size:var(--text-sm);">
+                Every box needs its FedEx/UPS tracking barcode (12+ characters) so the
+                counts land on the right Airtable shipment. Scan the label, then press
+                Capture &amp; Send again.</p>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="nobc-ok" type="button">OK — scan the barcode</button>
+        </div>
+    </div>
+</div>
+
 <script src="js/icons.js"></script>
 <script src="js/api.js?v=16"></script>
 <script src="js/utils.js"></script>
 <script src="js/insole_parse.js?v=2"></script>
-<script src="js/capture.js?v=12"></script>
+<script src="js/capture.js?v=13"></script>
 </body>
 </html>

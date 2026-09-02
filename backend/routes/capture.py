@@ -141,6 +141,14 @@ def _clean_barcode(barcode):
     return bc
 
 
+# Hard requirement (2026-09-02): every capture must carry a scanned tracking
+# barcode — without one the box's counts can NEVER match an Airtable shipment
+# row (11 barcode-less boxes silently never synced). FedEx tracking numbers are
+# 12 digits (long routing scans collapse to those 12 in _clean_barcode) and UPS
+# is 18 chars, so 12 is the floor. Applies to shoe AND insole captures.
+MIN_BARCODE_LEN = 12
+
+
 # A worker re-scanning a label they already captured is almost always a mistake
 # (FedEx tracking numbers are unique per package) — and two rows with the same
 # barcode double-write the same Airtable shipment record. Codes shorter than
@@ -260,6 +268,12 @@ def create_metadata(data: MetadataCreate, conn: sqlite3.Connection = Depends(get
     weight = _clean_weight(data.weight_of_box)
     barcode = _clean_barcode(data.barcode)
     notes = _clean_note(data.notes)
+    if not barcode or len(barcode) < MIN_BARCODE_LEN:
+        raise HTTPException(
+            status_code=422,
+            detail=f"A scanned barcode is required (min {MIN_BARCODE_LEN} chars) — "
+                   "box data can't match its Airtable shipment without one",
+        )
     if not _has_box_data(data.total_good_sneakers, data.total_end_of_life,
                          data.casuals, data.singles, weight):
         raise HTTPException(
@@ -309,14 +323,15 @@ async def capture(
 ):
     """Store one whole-table photo + box metadata as a `pending` table_photos
     row, ready for background processing (the worker arrives in P3). Validation:
-    a readable image AND at least one box field > 0. A duplicate barcode is
-    refused with 409 unless `overwrite_of` names the previous entry to replace
-    (the frontend's overwrite/cancel modal drives that).
+    a readable image, a scanned barcode (min MIN_BARCODE_LEN chars — no
+    Airtable match without one), AND at least one box field > 0. A duplicate
+    barcode is refused with 409 unless `overwrite_of` names the previous entry
+    to replace (the frontend's overwrite/cancel modal drives that).
 
     capture_mode='insoles' is the station's insole-only flow: no shoe counts
-    (the good/eol/casuals inputs are hidden), so the box-data rule is replaced
-    by a barcode requirement — the whole point of an insole run is the per-brand
-    pair/single counts landing on that shipment's Airtable row."""
+    (the good/eol/casuals inputs are hidden), so the box-data rule is skipped —
+    the whole point of an insole run is the per-brand pair/single counts
+    landing on that shipment's Airtable row."""
     weight_of_box = _clean_weight(weight_of_box)
     barcode = _clean_barcode(barcode)
     notes = _clean_note(notes)
@@ -324,13 +339,15 @@ async def capture(
     if capture_mode not in ("shoes", "insoles"):
         raise HTTPException(status_code=422,
                             detail="capture_mode must be 'shoes' or 'insoles'")
-    if capture_mode == "insoles":
-        if not barcode or len(barcode) < MIN_DUP_BARCODE_LEN:
-            raise HTTPException(
-                status_code=422,
-                detail="Insole capture requires a scanned barcode")
-    elif not _has_box_data(total_good_sneakers, total_end_of_life, casuals,
-                           singles, weight_of_box):
+    if not barcode or len(barcode) < MIN_BARCODE_LEN:
+        raise HTTPException(
+            status_code=422,
+            detail=f"A scanned barcode is required (min {MIN_BARCODE_LEN} chars) — "
+                   "box data can't match its Airtable shipment without one",
+        )
+    if capture_mode != "insoles" and not _has_box_data(
+            total_good_sneakers, total_end_of_life, casuals,
+            singles, weight_of_box):
         raise HTTPException(
             status_code=422,
             detail="At least one box field (good / end-of-life / casuals / singles / weight) must be > 0",

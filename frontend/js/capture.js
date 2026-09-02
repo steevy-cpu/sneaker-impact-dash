@@ -16,6 +16,11 @@
 
     const OPERATOR_ID = localStorage.getItem("operator_id") || "OP-WEB";
     const CAPTURE_DEBOUNCE_MS = 1200;
+    // Hard requirement: every capture needs a scanned tracking barcode or its
+    // counts can never match an Airtable shipment. FedEx = 12 digits (routing
+    // scans collapse to those 12), UPS = 18 chars — 12 is the floor. The
+    // server enforces the same rule (422), this is just the friendly gate.
+    const MIN_BARCODE_LEN = 12;
     const TRIGGER_KEY = "capture_trigger";   // {kind:'key', code} | {kind:'mouse', button}
 
     const stage = document.getElementById("capture-stage");
@@ -45,6 +50,8 @@
     const dupModalBody = document.getElementById("dup-modal-body");
     const dupCancelBtn = document.getElementById("dup-cancel");
     const dupOverwriteBtn = document.getElementById("dup-overwrite");
+    const nobcModal = document.getElementById("nobc-modal");
+    const nobcOkBtn = document.getElementById("nobc-ok");
     const buzzVolume = document.getElementById("buzz-volume");
     const buzzVolumeLabel = document.getElementById("buzz-volume-label");
     const buzzTestBtn = document.getElementById("buzz-test");
@@ -103,15 +110,17 @@
         };
     }
     function validate(d) {
-        // Insole mode swaps the box-data rule for a barcode requirement: the
-        // counts fields are hidden, and the run is pointless without the
-        // shipment row its insole counts will land on.
+        // Barcode first, BOTH modes: without a tracking number the box can
+        // never match its Airtable shipment, so the capture is refused with a
+        // buzz + modal the worker can't miss.
+        if (barcodeInput.value.trim().length < MIN_BARCODE_LEN) {
+            capError.textContent = "⚠️ Scan or enter the box barcode first (min " + MIN_BARCODE_LEN + " chars)";
+            capError.style.display = "";
+            showNobcModal();
+            return false;
+        }
+        // Insole mode: counts fields are hidden, the barcode was the only rule.
         if (insoleMode) {
-            if (barcodeInput.value.trim().length < 4) {
-                capError.textContent = "⚠️ Scan the box barcode first — insole capture needs it";
-                capError.style.display = "";
-                return false;
-            }
             capError.style.display = "none";
             return true;
         }
@@ -180,7 +189,7 @@
         const now = Date.now();
         if (busy || now - lastCaptureAt < CAPTURE_DEBOUNCE_MS) return;
         const d = readBox();
-        if (!validate(d)) { showToast("Enter box data first", "error", 1800); return; }
+        if (!validate(d)) return;   // validate() shows its own feedback (inline error / barcode modal)
         const blob = uploadedBlob || await grabVideoBlob();
         if (!blob) { showToast("NO CAMERA — use “Upload image…”", "error"); return; }
 
@@ -311,6 +320,31 @@
         } catch (e) { /* audio is best-effort — the modal still shows */ }
     }
 
+    /* ---- Missing-barcode modal (hard requirement) ------------------------ */
+
+    let nobcOpen = false;
+
+    function showNobcModal() {
+        playBuzz();
+        nobcOpen = true;
+        nobcModal.classList.add("open");
+        nobcModal.focus();      // focus the overlay so a held Space can't press anything
+    }
+    function closeNobcModal() {
+        nobcOpen = false;
+        nobcModal.classList.remove("open");
+        barcodeInput.focus();   // straight back to scanning
+    }
+    nobcOkBtn.addEventListener("click", closeNobcModal);
+    // A scanner burst ends in Enter — just close and refocus so the NEXT scan
+    // lands in the barcode field; Escape closes too.
+    document.addEventListener("keydown", (e) => {
+        if (!nobcOpen) return;
+        if (e.key === "Enter" || e.key === "Escape") {
+            e.preventDefault(); e.stopPropagation(); closeNobcModal();
+        }
+    }, true);
+
     let dupHandlers = null;     // {onOverwrite, onCancel} for the open modal
 
     function showDupModal(existing, matchCount, handlers) {
@@ -426,14 +460,14 @@
             e.preventDefault();
             if (dupModalOpen) return;          // double-scan while the modal is up
             const code = barcodeInput.value.trim();
-            if (code.length >= 4) {
+            if (code.length >= MIN_BARCODE_LEN) {
                 barcodeStatus.textContent = "Scanned: " + code;
                 showToast("BARCODE SCANNED: " + code, "barcode", 1500);
                 lookupShipment(code);
                 checkDuplicate(code);
                 capWeight.focus();         // after a scan, jump straight to Weight; Enter/Tab walks the rest
             } else {
-                barcodeStatus.textContent = "Barcode too short (min 4 chars)";
+                barcodeStatus.textContent = "Barcode too short (min " + MIN_BARCODE_LEN + " chars — scan the FedEx/UPS label)";
             }
         }
     });
@@ -472,7 +506,7 @@
     });
 
     window.addEventListener("keydown", (e) => {
-        if (dupModalOpen) return;   // no trigger/learning while the duplicate modal is up
+        if (dupModalOpen || nobcOpen) return;   // no trigger/learning while a modal is up
         if (learning) {
             if (MODIFIERS.includes(e.code)) return;      // ignore a held modifier
             e.preventDefault();
@@ -494,7 +528,7 @@
     }, true);
 
     window.addEventListener("mousedown", (e) => {
-        if (dupModalOpen) return;   // modal buttons are plain left-clicks; no trigger can fire
+        if (dupModalOpen || nobcOpen) return;   // modal buttons are plain left-clicks; no trigger can fire
         if (learning) {
             if (e.button === 0) {
                 showToast("That's a normal left-click — the button likely sends a key. Try again.", "error", 3800);
