@@ -138,6 +138,7 @@ _IT_PUBLIC_EXACT = {
     "/frontend/capture.html", "/frontend/tableau.html",
     "/frontend/config.html", "/frontend/it.html",
     "/api/capture", "/api/metadata", "/api/health",
+    "/api/capture-stats/today",   # capture page's "Total boxes today" counter
 }
 _IT_PUBLIC_PREFIXES = (
     # shared assets (page scripts hold no data; the APIs behind them are gated)

@@ -249,6 +249,25 @@ def _enqueue_outbox(conn, tp_id, barcode, box):
 # Create
 # ---------------------------------------------------------------------------
 
+@router.get("/capture-stats/today", summary="Today's capture counter (station display)")
+def capture_stats_today(conn: sqlite3.Connection = Depends(get_db)):
+    """Tiny endpoint behind the Capture page's "Total boxes today" counter.
+    Public (IT-gate allowlisted) and deliberately minimal — one indexed lookup,
+    exposing nothing but the number the floor already knows.
+
+    The number is today's highest TBL-YYYYMMDD-NNNN sequence (user's choice,
+    2026-09-02): it counts every box the crew scanned, INCLUDING captures later
+    deleted or overwritten — a plain row COUNT drifts below the sequence as
+    duplicates get replaced, which reads like boxes vanishing."""
+    prefix = f"TBL-{datetime.now().strftime('%Y%m%d')}-"
+    row = conn.execute(
+        "SELECT id FROM table_photos WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+        (f"{prefix}%",),
+    ).fetchone()
+    n = int(str(row["id"]).rsplit("-", 1)[-1]) if row else 0
+    return {"date": datetime.now().strftime("%Y-%m-%d"), "tables_today": n}
+
+
 @router.get("/barcode-check/{barcode}", summary="Is this barcode already captured?")
 def barcode_check(barcode: str, conn: sqlite3.Connection = Depends(get_db)):
     """Scan-time duplicate lookup for the Capture page: called on every barcode

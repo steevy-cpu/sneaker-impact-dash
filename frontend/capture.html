@@ -181,6 +181,11 @@
                         <span id="buzz-volume-label" style="min-width:34px;">50%</span>
                         <button class="btn-secondary" id="buzz-test" type="button" style="padding:2px 10px; font-size:var(--text-xs);">Test</button>
                     </div>
+                    <!-- Live per-day counter: tables captured today across all stations -->
+                    <div style="display:flex; align-items:baseline; justify-content:center; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid var(--border);">
+                        <span style="font-size:var(--text-sm); color:var(--text-muted);">📦 Total boxes today:</span>
+                        <strong id="today-count" style="font-size:1.5em; font-variant-numeric:tabular-nums;">—</strong>
+                    </div>
                 </div>
             </div>
         </div>
@@ -228,6 +233,6 @@
 <script src="js/api.js?v=16"></script>
 <script src="js/utils.js"></script>
 <script src="js/insole_parse.js?v=2"></script>
-<script src="js/capture.js?v=13"></script>
+<script src="js/capture.js?v=14"></script>
 </body>
 </html>

@@ -52,6 +52,7 @@
     const dupOverwriteBtn = document.getElementById("dup-overwrite");
     const nobcModal = document.getElementById("nobc-modal");
     const nobcOkBtn = document.getElementById("nobc-ok");
+    const todayCount = document.getElementById("today-count");
     const buzzVolume = document.getElementById("buzz-volume");
     const buzzVolumeLabel = document.getElementById("buzz-volume-label");
     const buzzTestBtn = document.getElementById("buzz-test");
@@ -171,6 +172,20 @@
         stage.classList.remove("frozen"); frozenBadge.style.display = "none"; frozen.removeAttribute("src");
     }
 
+    /* ---- "Total boxes today" counter ------------------------------------ */
+    // Purely informational for the floor: refreshed on load, after every send,
+    // and once a minute (tab-visible only). Best-effort — a failed fetch just
+    // leaves the last number, never touches the capture flow.
+    async function refreshTodayCount() {
+        try {
+            const r = await fetch("/api/capture-stats/today");
+            if (!r.ok) return;
+            const d = await r.json();
+            todayCount.textContent = d.tables_today;
+        } catch (e) { /* cosmetic only */ }
+    }
+    setInterval(() => { if (!document.hidden) refreshTodayCount(); }, 60000);
+
     /* ---- Grab a still --------------------------------------------------- */
 
     function grabVideoBlob() {
@@ -215,6 +230,7 @@
             showToast("✅ QUEUED — " + res.id, "success", 2600);
             resetFields();
             barcodeInput.focus();
+            refreshTodayCount();
         } catch (err) {
             // Duplicate-label backstop: the server refused the capture because
             // this barcode already exists (typed without Enter, scan-check
@@ -614,6 +630,7 @@
 
     refreshHint();
     refreshVolumeUI();
+    refreshTodayCount();
     initInsoleFlag();
     startCamera();
 })();
