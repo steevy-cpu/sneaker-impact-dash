@@ -255,17 +255,16 @@ def capture_stats_today(conn: sqlite3.Connection = Depends(get_db)):
     Public (IT-gate allowlisted) and deliberately minimal — one indexed lookup,
     exposing nothing but the number the floor already knows.
 
-    The number is today's highest TBL-YYYYMMDD-NNNN sequence (user's choice,
-    2026-09-02): it counts every box the crew scanned, INCLUDING captures later
-    deleted or overwritten — a plain row COUNT drifts below the sequence as
-    duplicates get replaced, which reads like boxes vanishing."""
+    The number is a plain COUNT of today's surviving table_photos rows (user's
+    choice, 2026-09-03): each unique scan counts once, and deleting or
+    overwriting a capture makes the counter drop accordingly — the id SEQUENCE
+    would keep counting boxes that no longer exist."""
     prefix = f"TBL-{datetime.now().strftime('%Y%m%d')}-"
     row = conn.execute(
-        "SELECT id FROM table_photos WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+        "SELECT COUNT(*) AS n FROM table_photos WHERE id LIKE ?",
         (f"{prefix}%",),
     ).fetchone()
-    n = int(str(row["id"]).rsplit("-", 1)[-1]) if row else 0
-    return {"date": datetime.now().strftime("%Y-%m-%d"), "tables_today": n}
+    return {"date": datetime.now().strftime("%Y-%m-%d"), "tables_today": row["n"]}
 
 
 @router.get("/barcode-check/{barcode}", summary="Is this barcode already captured?")
