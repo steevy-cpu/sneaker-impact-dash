@@ -80,15 +80,39 @@
             return cameraUnavailable("This browser can't access the camera. Use “Upload image…”.");
         }
         try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false,
-            });
+            // 4K, not 1080p: the 48MP station camera offers 3840x2160 MJPEG at a
+            // full 30 fps, and the snapshot canvas inherits the stream size — 4x
+            // the pixels for detection/cloud ID at ~the same tiling cost (batched
+            // tile inference absorbs the 15->60 tile jump). Full 8000x6000 exists
+            // but only at 5 fps preview and ~22x the tiles — don't request it.
+            //
+            // `exact` first: the station's Firefox silently stays at 1080p on an
+            // `ideal` 4K request (verified 2026-09-04 via v4l2 --get-fmt-video),
+            // and only OverconstrainedError tells us it truly can't. The ideal
+            // fallback keeps the station capturing no matter what.
+            const attempts = [
+                { video: { width: { exact: 3840 }, height: { exact: 2160 } }, audio: false },
+                { video: { width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false },
+            ];
+            let lastErr = null;
+            stream = null;
+            for (const constraints of attempts) {
+                try { stream = await navigator.mediaDevices.getUserMedia(constraints); break; }
+                catch (err) { lastErr = err; }
+            }
+            if (!stream) throw lastErr || new Error("no stream");
             video.srcObject = stream;
             stageMsg.style.display = "none";
             const track = stream.getVideoTracks()[0];
-            if (track && track.label) cameraLabel.textContent = track.label;
+            if (track && track.label) {
+                // Show the NEGOTIATED resolution so a silent fallback is visible
+                // on the page itself (and in any screenshot the floor sends us).
+                const s = track.getSettings ? track.getSettings() : {};
+                cameraLabel.textContent = track.label
+                    + (s.width ? " — " + s.width + "x" + s.height : "");
+            }
         } catch (err) {
-            cameraUnavailable("Camera unavailable (" + (err.name || "error") + "). Use “Upload image…”.");
+            cameraUnavailable("Camera unavailable (" + ((err && err.name) || "error") + "). Use “Upload image…”.");
         }
     }
     function cameraUnavailable(msg) {
@@ -620,6 +644,192 @@
         } catch (e) { /* flag off / config unreachable -> feature stays hidden */ }
     }
 
+    /* ---- Live shoe-box guide (SAM3 preview overlay) --------------------- */
+    // Server-gated (PREVIEW_SEGMENT_ENABLED): one probe at load; if off, none
+    // of this runs and the overlay stays hidden. When on: every ~2.5s send a
+    // downscaled frame to /api/capture-preview and draw the returned boxes.
+    // Everything here is fail-safe and self-pacing -- a slow reply just delays
+    // the next tick (no overlap) and an error clears the overlay. The guide
+    // stays ON while tables process (shared SAM3 worker); ticks are just
+    // slower then (~10s) because the engine shares the GPU.
+
+    const previewOverlay = document.getElementById("preview-overlay");
+    const previewBadge = document.getElementById("preview-badge");
+    const PREVIEW_TICK_MS = 2500;
+    const PREVIEW_SEND_W = 1280;         // downscale width sent to the server
+    let previewEnabled = false;
+
+    function previewSetBadge(text) {
+        previewBadge.textContent = text;
+        previewBadge.style.display = text ? "" : "none";
+    }
+    function previewClear() {
+        const ctx = previewOverlay.getContext("2d");
+        ctx.clearRect(0, 0, previewOverlay.width, previewOverlay.height);
+    }
+
+    function previewDraw(res) {
+        // Map source-frame coords onto the displayed video, which is
+        // object-fit:contain inside the stage -- compute the letterboxed rect.
+        const vw = video.videoWidth, vh = video.videoHeight;
+        if (!vw || !vh) return;
+        const cw = previewOverlay.clientWidth, ch = previewOverlay.clientHeight;
+        previewOverlay.width = cw; previewOverlay.height = ch;
+        const scale = Math.min(cw / vw, ch / vh);
+        const dw = vw * scale, dh = vh * scale;
+        const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+        const fx = dw / res.width, fy = dh / res.height;
+        const ctx = previewOverlay.getContext("2d");
+        ctx.clearRect(0, 0, cw, ch);
+        const pl = res.placement;
+        if (pl && pl.objects) {
+            drawPlacement(ctx, pl, res, ox, oy, fx, fy);
+        } else {
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#ffd166";
+            for (const b of res.boxes) {
+                ctx.strokeRect(ox + b.x1 * fx, oy + b.y1 * fy,
+                               (b.x2 - b.x1) * fx, (b.y2 - b.y1) * fy);
+            }
+        }
+        // Shared-worker design: the guide stays on during processing, just
+        // refreshing slower (~10s) while the engine shares the GPU -- say so.
+        const ready = pl && pl.table ? "READY: " + pl.table.ready + " / " + pl.table.total
+                                     : "👟 " + res.boxes.length + " shoes seen";
+        previewSetBadge(ready + (pl && pl.stale ? " · holding" : "")
+                        + (res.queue ? " · processing" : ""));
+        updatePlacementPanel(pl);
+    }
+
+    /* ---- Live Placement Validation (overlay + readiness panel) ---------- */
+    // The server's placement block is the single source of truth (see
+    // backend/placement/). This layer ONLY draws it. It lives on the overlay
+    // canvas -- the saved capture frame (captureFrame -> canvas.toBlob) is
+    // taken from the raw <video>, so placement graphics never reach a scan.
+    const PLACEMENT_STYLE = {
+        ready:      { color: "#22c55e", label: "READY" },
+        too_close:  { color: "#ef4444", label: "TOO CLOSE" },
+        center_bar: { color: "#eab308", label: "CENTER BAR" },
+    };
+    const placementPanel = document.getElementById("placement-panel");
+    window.placementState = null;     // latest server result, for a future scan gate
+
+    function drawPlacement(ctx, pl, res, ox, oy, fx, fy) {
+        // restricted zones (translucent) + station split line
+        for (const z of pl.zones || []) {
+            ctx.beginPath();
+            z.polygon.forEach(([x, y], i) => {
+                const px = ox + x * fx, py = oy + y * fy;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            });
+            ctx.closePath();
+            ctx.fillStyle = "rgba(234,179,8,0.18)";
+            ctx.fill();
+            ctx.strokeStyle = "rgba(234,179,8,0.7)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        if (pl.station_split_x != null) {
+            const sx = ox + pl.station_split_x * fx;
+            ctx.setLineDash([6, 6]);
+            ctx.strokeStyle = "rgba(255,255,255,0.35)";
+            ctx.beginPath(); ctx.moveTo(sx, oy); ctx.lineTo(sx, oy + res.height * fy); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = "rgba(255,255,255,0.7)";
+            ctx.font = "bold 9px system-ui, sans-serif";
+            ctx.fillText("A", sx - 12, oy + 11);
+            ctx.fillText("B", sx + 5, oy + 11);
+        }
+        // objects
+        ctx.font = "bold 8px system-ui, sans-serif";     // small: don't hide the shoes
+        for (const o of pl.objects) {
+            const st = PLACEMENT_STYLE[o.placement_status] || PLACEMENT_STYLE.ready;
+            const [x1, y1, x2, y2] = o.bbox;
+            const X = ox + x1 * fx, Y = oy + y1 * fy, W = (x2 - x1) * fx, H = (y2 - y1) * fy;
+            ctx.lineWidth = o.placement_status === "ready" ? 1.5 : 2.5;
+            ctx.strokeStyle = st.color;
+            ctx.strokeRect(X, Y, W, H);
+            if (o.placement_status !== "ready") {
+                const label = st.label;
+                const tw = ctx.measureText(label).width + 6;
+                const ly = Y - 10 < oy ? Y + H : Y - 10;
+                ctx.fillStyle = st.color;
+                ctx.fillRect(X, ly, tw, 10);
+                ctx.fillStyle = "#111";
+                ctx.fillText(label, X + 3, ly + 8);
+            }
+        }
+    }
+
+    function updatePlacementPanel(pl) {
+        window.placementState = pl || null;
+        if (!placementPanel) return;
+        if (!pl || !pl.stations) { placementPanel.style.display = "none"; return; }
+        placementPanel.style.display = "";
+        const cards = { A: pl.stations.A, B: pl.stations.B, table: pl.table };
+        for (const card of placementPanel.querySelectorAll(".placement-card")) {
+            const s = cards[card.dataset.station];
+            if (!s) continue;
+            card.querySelector(".placement-ready").textContent = "READY: " + s.ready + " / " + s.total;
+            const v = card.querySelector(".placement-verdict");
+            if (s.ready_to_scan) {
+                v.textContent = "✓ READY TO SCAN";
+                v.style.color = "#22c55e";
+                card.style.borderColor = "rgba(34,197,94,0.6)";
+            } else {
+                v.textContent = "PLACEMENT ISSUES: " + s.issues;
+                v.style.color = "#ef4444";
+                card.style.borderColor = "rgba(239,68,68,0.6)";
+            }
+        }
+    }
+
+    async function previewTick() {
+        if (document.hidden || !stream || busy || dupModalOpen || nobcOpen) return;
+        if (stage.classList.contains("frozen")) { previewClear(); previewSetBadge(""); updatePlacementPanel(null); return; }
+        if (!video.videoWidth) return;
+        try {
+            const w = Math.min(PREVIEW_SEND_W, video.videoWidth);
+            const h = Math.round(video.videoHeight * (w / video.videoWidth));
+            const c = document.createElement("canvas");
+            c.width = w; c.height = h;
+            c.getContext("2d").drawImage(video, 0, 0, w, h);
+            const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.7));
+            if (!blob) return;
+            const fd = new FormData();
+            fd.append("frame", blob, "frame.jpg");
+            const resp = await fetch("/api/capture-preview", { method: "POST", body: fd });
+            if (!resp.ok) return;
+            const res = await resp.json();
+            if (!res.ok || !res.boxes) {
+                // Worker warming up (first frame loads the model) or down.
+                previewSetBadge("guide warming up…");
+                return;
+            }
+            previewDraw(res);
+        } catch (e) { /* cosmetic feature -- never interfere with capture */ }
+    }
+
+    async function initPreviewGuide() {
+        try {
+            const r = await fetch("/api/capture-preview");
+            if (!r.ok) return;
+            const d = await r.json();
+            if (!d.enabled) return;
+            previewEnabled = true;
+            previewOverlay.style.display = "";
+            previewSetBadge("guide starting…");
+            // Self-pacing loop: next tick is scheduled only after this one
+            // fully finishes, so slow replies can never stack up requests.
+            (async function loop() {
+                while (previewEnabled) {
+                    await previewTick();
+                    await new Promise(r => setTimeout(r, PREVIEW_TICK_MS));
+                }
+            })();
+        } catch (e) { /* server unreachable -> guide stays hidden */ }
+    }
+
     /* ---- Wiring --------------------------------------------------------- */
 
     captureBtn.addEventListener("click", fullSend);
@@ -632,5 +842,6 @@
     refreshVolumeUI();
     refreshTodayCount();
     initInsoleFlag();
+    initPreviewGuide();
     startCamera();
 })();

@@ -24,7 +24,10 @@ from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      UploadFile)
 from fastapi.concurrency import run_in_threadpool
 
-from backend.config import IMAGES_DIR, TABLE_PHOTOS_DIR
+from backend.config import (IMAGES_DIR, TABLE_PHOTOS_DIR,
+                            PREVIEW_SEGMENT_ENABLED, PREVIEW_WORKER_URL,
+                            PLACEMENT_ENABLED)
+from backend.placement import PlacementConfig, validate as validate_placement
 from backend.database import get_db
 from backend.models import MetadataCreate
 from backend.routes.pairs import pair_to_dict
@@ -265,6 +268,72 @@ def capture_stats_today(conn: sqlite3.Connection = Depends(get_db)):
         (f"{prefix}%",),
     ).fetchone()
     return {"date": datetime.now().strftime("%Y-%m-%d"), "tables_today": row["n"]}
+
+
+_placement_cfg = PlacementConfig.from_app_config()
+_last_placement = None      # missed-detection hold across preview ticks
+
+
+@router.get("/capture-preview", summary="Is the live shoe-box guide enabled?")
+def capture_preview_probe():
+    """Cheap probe the capture page calls once at load to decide whether to
+    show the guide UI at all. No DB, no worker contact."""
+    return {"enabled": PREVIEW_SEGMENT_ENABLED, "placement": PLACEMENT_ENABLED}
+
+
+@router.post("/capture-preview", summary="Live shoe-box guide: segment one preview frame")
+def capture_preview(frame: UploadFile = File(...),
+                    conn: sqlite3.Connection = Depends(get_db)):
+    """Forward one downscaled camera frame to the resident SAM3 preview worker
+    and return its boxes (source-frame coords) for the capture page overlay.
+
+    Speed contract (the standing no-lag rule):
+      * sync def -> FastAPI runs it in the threadpool, never on the event loop;
+      * always on (shared-worker design): the engine segments through the
+        same resident model, so there is no second copy to make room for --
+        a guide tick just waits behind at most one table segmentation (~1s);
+      * the forward has a hard 25s timeout: idle replies take ~1s, but while a
+        table is processing the engine's identify stages time-slice the GPU and
+        a guide frame takes ~10-12s (measured 2026-09-10) -- still "on", just a
+        slower refresh. Only the worker's one-time post-restart warm-up (~80s)
+        exceeds this; the page's "warming up" retry absorbs that.
+    """
+    if not PREVIEW_SEGMENT_ENABLED:
+        raise HTTPException(status_code=404, detail="preview guide disabled")
+    data = frame.file.read(4 * 1024 * 1024 + 1)
+    if len(data) > 4 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="frame too large")
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            PREVIEW_WORKER_URL + "/segment", data=data, method="POST",
+            headers={"Content-Type": "application/octet-stream"})
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            out = json.loads(resp.read())
+    except Exception as exc:                           # noqa: BLE001 - fail safe
+        # Worker down/loading/slow -- the page just skips this tick.
+        return {"busy": False, "ok": False, "error": str(exc)[:200]}
+    out["busy"] = False
+    # Live Placement Validation: pure geometry on the worker's boxes (<5ms),
+    # attached for the page to draw green/red/yellow. Fail-safe: any error
+    # leaves the plain guide working. `previous` gives the one-frame hold for
+    # a missed detection (single-station server; a 2nd station would need
+    # a per-client key).
+    if PLACEMENT_ENABLED:
+        global _last_placement
+        try:
+            out["placement"] = validate_placement(
+                out.get("boxes", []), (out["height"], out["width"]),
+                config=_placement_cfg, previous=_last_placement)
+            _last_placement = out["placement"]
+        except Exception as exc:                       # noqa: BLE001 - fail safe
+            out["placement_error"] = str(exc)[:200]
+    # Informational only: lets the page say "· processing" while the
+    # refresh is slower (GPU shared with the engine). Never gates.
+    out["queue"] = conn.execute(
+        "SELECT COUNT(*) FROM table_photos WHERE status IN ('processing', 'pending')"
+    ).fetchone()[0]
+    return out
 
 
 @router.get("/barcode-check/{barcode}", summary="Is this barcode already captured?")

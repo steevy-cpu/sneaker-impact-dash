@@ -11,12 +11,14 @@ import subprocess
 import tempfile
 
 from backend.config import (ENGINE_DIR, ENGINE_RUNNER, ENGINE_PYTHON,
-                            ENGINE_SEGMENT_MODEL, ENGINE_OLLAMA_MODEL,
+                            ENGINE_SEGMENT_MODEL, ENGINE_SEGMENT_BACKEND,
+                            ENGINE_OLLAMA_MODEL,
                             ENGINE_OLLAMA_URL, ENGINE_MODEL_TIMEOUT,
                             ENGINE_JOB_TIMEOUT, PAIRS_DIR, SEEN_SHOE_ENABLED,
                             ENGINE_SEGMENT_ESCALATE, ENGINE_SEGMENT_ESCALATE_MODE,
                             ENGINE_LOCAL_MODEL_ID, ENGINE_CROP_MASK_SAM2,
-                            ENGINE_ENV_PAD_KB, ENGINE_INSOLE_HEAD)
+                            ENGINE_ENV_PAD_KB, ENGINE_INSOLE_HEAD,
+                            ENGINE_SAM3_REMOTE_URL)
 
 
 class EngineError(RuntimeError):
@@ -43,6 +45,12 @@ def process_table_photo(tp_id: str, image_fs_path: str, mode: str = "shoes") -> 
         "--out-json",     out_json,
         "--id-prefix",    tp_id,
         "--segment-model", ENGINE_SEGMENT_MODEL,
+    ]
+    if ENGINE_SEGMENT_BACKEND:
+        cmd += ["--segment-backend", ENGINE_SEGMENT_BACKEND]
+    if ENGINE_SEGMENT_BACKEND == "sam3" and ENGINE_SAM3_REMOTE_URL:
+        cmd += ["--sam3-remote-url", ENGINE_SAM3_REMOTE_URL]
+    cmd += [
         "--ollama-model", ENGINE_OLLAMA_MODEL,
         "--ollama-url",   ENGINE_OLLAMA_URL,
         "--model-timeout", str(ENGINE_MODEL_TIMEOUT),

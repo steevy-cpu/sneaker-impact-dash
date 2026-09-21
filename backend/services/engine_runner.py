@@ -269,6 +269,20 @@ def _run_insoles(args, result):
                         "mode": "insoles"}
 
 
+
+def _set_path_hint(segmenter, image_path):
+    """Tell a RemoteSam3Segmenter (possibly wrapped by ROI/tiler/escalator)
+    where the photo lives so it can send the path instead of the pixels."""
+    seen = 0
+    node = segmenter
+    while node is not None and seen < 6:
+        if hasattr(node, "path_hint"):
+            node.path_hint = image_path
+            return
+        node = getattr(node, "base", None) or getattr(node, "primary", None)
+        seen += 1
+
+
 def main():
     ap = argparse.ArgumentParser(description="Run the pipeline on one table photo.")
     ap.add_argument("--engine-dir", required=True, help="sneaker_impact_training dir")
@@ -277,6 +291,11 @@ def main():
     ap.add_argument("--out-json", required=True, help="where the result JSON is written")
     ap.add_argument("--id-prefix", default="pair")
     ap.add_argument("--segment-model", default=None)
+    ap.add_argument("--segment-backend", default=None,
+                    help="override config.SEGMENT_BACKEND (yoloe|sam2|sam3)")
+    ap.add_argument("--sam3-remote-url", default=None,
+                    help="resident SAM3 worker URL (shared-worker design); "
+                         "'' = load in-process")
     ap.add_argument("--ollama-model", default=None)
     ap.add_argument("--ollama-url", default=None)
     ap.add_argument("--model-timeout", type=int, default=None)
@@ -341,6 +360,10 @@ def main():
         config.MODEL_BACKEND = "ollama"
         if args.segment_model:
             config.SEGMENT_MODEL = args.segment_model
+        if args.segment_backend:
+            config.SEGMENT_BACKEND = args.segment_backend
+        if args.sam3_remote_url is not None:
+            config.SEGMENT_SAM3_REMOTE_URL = args.sam3_remote_url
         if args.ollama_model:
             config.MODEL_OLLAMA_MODEL = args.ollama_model
         if args.ollama_url:
@@ -369,6 +392,8 @@ def main():
         h, w = image.shape[:2]
 
         segmenter = build_segmenter(config)
+
+        _set_path_hint(segmenter, args.image)
         segs = segmenter.segment(image)
         # Free the segmentation models (esp. SAM2 ~5GB under the escalation
         # hybrid) off the GPU NOW, before the per-pair VLM model-ID loop. Left

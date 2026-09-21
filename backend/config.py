@@ -69,6 +69,43 @@ ENGINE_PYTHON       = os.getenv("ENGINE_PYTHON", "/usr/bin/python3")
 # the hand-counted eval set vs 0.655 for 11s@0.25, at the same ~1.2s/photo
 # (tile batching absorbs the bigger model). See engine eval_tiling.py.
 ENGINE_SEGMENT_MODEL = os.getenv("ENGINE_SEGMENT_MODEL", "yoloe-11m-seg.pt")
+# Segmenter backend override ("" = engine config default, i.e. yoloe).
+# Flip to SAM3 with ENGINE_SEGMENT_BACKEND=sam3 + ENGINE_SEGMENT_MODEL=sam3.pt
+# in .env -- both live here so a revert is two .env lines + restart.
+ENGINE_SEGMENT_BACKEND = os.getenv("ENGINE_SEGMENT_BACKEND", "")
+# Capture-page live shoe-box guide (SAM3 preview overlay). OFF by default --
+# the frontend probes and hides its UI while this is 0. The heavy lifting is
+# a separate resident process (backend/services/preview_worker.py, systemd
+# unit sneaker-dash-preview) that the ENGINE also segments through (shared-
+# worker design) -- one model, so the guide stays on during processing.
+PREVIEW_SEGMENT_ENABLED = os.getenv("PREVIEW_SEGMENT_ENABLED", "0") not in ("0", "false", "False", "")
+PREVIEW_WORKER_URL = os.getenv("PREVIEW_WORKER_URL", "http://127.0.0.1:8766")
+# Shared-worker design (2026-09-10): the engine segments through the SAME
+# resident SAM3 as the guide (no second copy, -74s/table). "" = in-process.
+ENGINE_SAM3_REMOTE_URL = os.getenv("ENGINE_SAM3_REMOTE_URL", PREVIEW_WORKER_URL)
+# --- Live Placement Validation (capture-page overlay, 2026-09-21) -----------
+# Pure geometry over the guide's SAM3 detections: GREEN ready / RED too close
+# / YELLOW on the centre support bar, per station (A = camera-left, B = right)
+# and for the whole table. Thresholds are in pixels AT A 1280px-WIDE FRAME
+# (backend/placement/restricted_zones.REFERENCE_WIDTH_PX) and scale with the
+# validated frame. Zone/station geometry lives in backend/placement/
+# restricted_zones.py (fractions of the frame until camera calibration exists).
+PLACEMENT_ENABLED = os.getenv("PLACEMENT_ENABLED", "1") not in ("0", "false", "False", "")
+# Calibrated on real capture frames 2026-09-21: the crew lays pairs AND
+# neighbouring pairs 0-10px apart, so distance can't tell a mate from a
+# neighbour (the appearance-based pairing stage does that). Hence: gap 0 =
+# only TOUCHING masks count as "close", and overlap 0.15 = STACKED shoes
+# (measured: stacked ~0.46 bbox IoU, touching-but-separate <= 0.03).
+PLACEMENT_MIN_OBJECT_GAP_PX = float(os.getenv("PLACEMENT_MIN_OBJECT_GAP_PX", "0"))
+PLACEMENT_CENTER_BAR_MARGIN_PX = float(os.getenv("PLACEMENT_CENTER_BAR_MARGIN_PX", "15"))
+PLACEMENT_OVERLAP_THRESHOLD = float(os.getenv("PLACEMENT_OVERLAP_THRESHOLD", "0.15"))   # bbox IoU
+# Shoes are laid out as PAIRS (the pairing stage relies on mates being close),
+# so ONE close neighbour is normal and allowed; a shoe crowded by 2+ touching
+# neighbours or overlapping any neighbour is TOO CLOSE. Set to 0 to flag every close pair.
+PLACEMENT_ALLOW_ONE_CLOSE_NEIGHBOR = os.getenv("PLACEMENT_ALLOW_ONE_CLOSE_NEIGHBOR", "1") not in ("0", "false", "False", "")
+# Preview frames occasionally miss a detection for a tick; keep the last
+# result alive for this many empty frames so the overlay doesn't flicker.
+PLACEMENT_HOLD_FRAMES = int(os.getenv("PLACEMENT_HOLD_FRAMES", "1"))
 # SAM2+gate escalation hybrid (research 2026-06-27). OFF by default = the current
 # YOLOE pipeline, unchanged. Flip ENGINE_SEGMENT_ESCALATE=1 (and restart the dash
 # service) to turn it on; set it back to 0 to instantly revert. Mode "weak" only

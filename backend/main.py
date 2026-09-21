@@ -139,6 +139,7 @@ _IT_PUBLIC_EXACT = {
     "/frontend/config.html", "/frontend/it.html",
     "/api/capture", "/api/metadata", "/api/health",
     "/api/capture-stats/today",   # capture page's "Total boxes today" counter
+    "/api/capture-preview",       # capture page's live shoe-box guide (SAM3)
 }
 _IT_PUBLIC_PREFIXES = (
     # shared assets (page scripts hold no data; the APIs behind them are gated)
