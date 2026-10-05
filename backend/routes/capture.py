@@ -156,7 +156,16 @@ import time
 from backend.config import BASE_DIR
 _TIMING_CSV = BASE_DIR / "capture_timing.csv"
 _timing = {"count": 0, "last_perf": None, "last_gap": None, "gap_sum": 0.0, "gap_n": 0,
-           "since": None, "last_ts": None, "csv_mtime": None}
+           "since": None, "last_ts": None, "csv_mtime": None, "gaps": []}
+# "Active" average (2026-10-05): breaks, lunches and overnight gaps are logged
+# like any other gap (the log stays raw and honest), but they swamp a plain
+# mean -- 5 gaps over an hour (one 65 h weekend) made the average 1747 s
+# while the median capture-to-capture time was 96 s. The active average
+# keeps only gaps <= median + ACTIVE_MAD_K * MAD (median absolute deviation,
+# scaled to sigma): a robust outlier cut that adapts to the crew's real pace
+# instead of a hard-coded "break = N minutes". On the real log that cuts at
+# ~5 min and keeps 91% of gaps (active mean 94 s).
+ACTIVE_MAD_K = 3.0
 _timing_lock = threading.Lock()
 
 
@@ -170,7 +179,7 @@ def _timing_init():
         _timing["csv_mtime"] = _TIMING_CSV.stat().st_mtime
     except (FileNotFoundError, OSError):
         return
-    _timing.update(count=0, last_gap=None, gap_sum=0.0, gap_n=0, since=None, last_ts=None)
+    _timing.update(count=0, last_gap=None, gap_sum=0.0, gap_n=0, since=None, last_ts=None, gaps=[])
     for r in rows:
         try:
             n, ts, gap = int(r[0]), r[1], r[2]
@@ -184,6 +193,7 @@ def _timing_init():
             _timing["gap_sum"] += float(gap)
             _timing["gap_n"] += 1
             _timing["last_gap"] = float(gap)
+            _timing["gaps"].append(float(gap))
 
 
 _timing_init()
@@ -215,6 +225,7 @@ def _record_capture_timing():
         if gap is not None:
             _timing["gap_sum"] += gap
             _timing["gap_n"] += 1
+            _timing["gaps"].append(gap)
         n = _timing["count"]
     try:
         new = not _TIMING_CSV.exists()
@@ -241,13 +252,32 @@ def _timing_refresh_locked():
         _timing_init()
 
 
+def _active_stats(gaps):
+    """Median + MAD outlier cut -> (active_mean, cutoff_s, n_kept, n_excluded).
+    Needs a handful of gaps to be meaningful; below that, plain mean."""
+    if not gaps:
+        return None, None, 0, 0
+    if len(gaps) < 5:
+        return sum(gaps) / len(gaps), None, len(gaps), 0
+    srt = sorted(gaps)
+    med = srt[len(srt) // 2]
+    mad = sorted(abs(g - med) for g in gaps)[len(gaps) // 2] * 1.4826   # MAD -> sigma
+    cutoff = med + ACTIVE_MAD_K * max(mad, 1.0)
+    kept = [g for g in gaps if g <= cutoff]
+    return sum(kept) / len(kept), cutoff, len(kept), len(gaps) - len(kept)
+
+
 def _timing_snapshot():
     with _timing_lock:
         _timing_refresh_locked()
         avg = _timing["gap_sum"] / _timing["gap_n"] if _timing["gap_n"] else None
+        active, cutoff, kept, excl = _active_stats(_timing["gaps"])
         return {"captures": _timing["count"],
                 "last_sec": None if _timing["last_gap"] is None else round(_timing["last_gap"], 2),
-                "avg_sec": None if avg is None else round(avg, 2),
+                "avg_sec": None if avg is None else round(avg, 2),          # raw all-time mean
+                "active_avg_sec": None if active is None else round(active, 2),
+                "active_cutoff_sec": None if cutoff is None else round(cutoff),
+                "active_excluded": excl,
                 "since": _timing["since"]}          # first day in the CSV
 
 
