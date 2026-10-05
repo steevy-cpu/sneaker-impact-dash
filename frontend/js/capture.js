@@ -564,7 +564,7 @@
     });
 
     window.addEventListener("keydown", (e) => {
-        if (dupModalOpen || nobcOpen) return;   // no trigger/learning while a modal is up
+        if (dupModalOpen || nobcOpen || caplogOpen) return;   // no trigger/learning while a modal is up
         if (learning) {
             if (MODIFIERS.includes(e.code)) return;      // ignore a held modifier
             e.preventDefault();
@@ -586,7 +586,7 @@
     }, true);
 
     window.addEventListener("mousedown", (e) => {
-        if (dupModalOpen || nobcOpen) return;   // modal buttons are plain left-clicks; no trigger can fire
+        if (dupModalOpen || nobcOpen || caplogOpen) return;   // modal buttons are plain left-clicks; no trigger can fire
         if (learning) {
             if (e.button === 0) {
                 showToast("That's a normal left-click — the button likely sends a key. Try again.", "error", 3800);
@@ -876,6 +876,59 @@
             })();
         } catch (e) { /* server unreachable -> guide stays hidden */ }
     }
+
+    /* ---- Capture log modal (accepted vs nulled) -------------------------- */
+    const caplogModal = document.getElementById("caplog-modal");
+    const caplogBody = document.getElementById("caplog-body");
+    let caplogOpen = false;
+    function capTimeFmt(iso) {
+        return iso ? new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }) : "–";
+    }
+    function caplogTable(items, kind) {
+        if (!items.length) return `<div class="empty-state">No ${kind} captures logged.</div>`;
+        const rows = items.map(r => `
+            <tr>
+                <td class="td-muted">${r.capture_number}</td>
+                <td>${capTimeFmt(r.at)}</td>
+                <td style="font-variant-numeric:tabular-nums;">${r.gap_sec == null ? "–" : r.gap_sec.toFixed(2) + " s"}</td>
+                <td class="font-mono text-sm">${r.table_id || "–"}</td>
+                ${kind === "accepted" ? `<td class="text-sm">${r.status || "–"} · ${r.num_pairs == null ? "–" : r.num_pairs + " pairs"}</td>` : ""}
+            </tr>`).join("");
+        return `<div class="table-wrap"><table>
+            <thead><tr><th>#</th><th>Date &amp; time</th><th>Time to capture</th><th>Table</th>${kind === "accepted" ? "<th>Result</th>" : ""}</tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
+    }
+    async function openCaptureLog() {
+        caplogOpen = true;
+        caplogBody.innerHTML = '<div class="loading-state">Loading…</div>';
+        caplogModal.classList.add("open"); caplogModal.focus();
+        try {
+            const r = await fetch("/api/capture-stats/log?limit=500");
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            const d = await r.json();
+            document.getElementById("caplog-title").textContent =
+                `Capture log — ${d.counts.accepted} accepted · ${d.counts.nulled} nulled`;
+            caplogBody.innerHTML = `
+                <h3 style="margin:0 0 8px;">✅ Accepted <span class="text-muted text-sm">(${d.counts.accepted})</span></h3>
+                ${caplogTable(d.accepted, "accepted")}
+                <h3 style="margin:18px 0 8px;">🚫 Nulled <span class="text-muted text-sm">(${d.counts.nulled} — table record was deleted)</span></h3>
+                ${caplogTable(d.nulled, "nulled")}
+                <p class="text-muted text-xs" style="margin:12px 0 0;">"Time to capture" is the gap since the previous successful capture. Newest first.</p>`;
+        } catch (e) {
+            caplogBody.innerHTML = `<div class="empty-state">Could not load the capture log (${e.message}).</div>`;
+        }
+    }
+    function closeCaptureLog() { caplogOpen = false; caplogModal.classList.remove("open"); barcodeInput.focus(); }
+    if (capTiming) {
+        capTiming.addEventListener("click", openCaptureLog);
+        capTiming.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCaptureLog(); } });
+    }
+    document.getElementById("caplog-close").addEventListener("click", closeCaptureLog);
+    caplogModal.addEventListener("click", (e) => { if (e.target === caplogModal) closeCaptureLog(); });
+    document.addEventListener("keydown", (e) => {
+        if (!caplogOpen) return;
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeCaptureLog(); }
+    }, true);
 
     /* ---- Wiring --------------------------------------------------------- */
 

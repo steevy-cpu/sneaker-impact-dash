@@ -201,7 +201,7 @@
                         <button class="btn-secondary" id="learn-btn" type="button" title="Bind the USB-C hardware button">🔘 Set USB button</button>
                     </div>
                     <!-- Capture timing: time between successful captures (server-measured). -->
-                    <div id="cap-timing" style="font-size:var(--text-xs); color:var(--text-muted); font-variant-numeric:tabular-nums; margin-top:4px;">Last capture: – · Average: – · Captures: –</div>
+                    <div id="cap-timing" role="button" tabindex="0" title="Click to open the capture log" style="font-size:var(--text-xs); color:var(--text-muted); font-variant-numeric:tabular-nums; margin-top:4px; cursor:pointer; text-decoration:underline dotted;">Last capture: – · Average: – · Captures: –</div>
                     <div class="capture-hint" id="cap-hint">Enter box data, then press the <strong>USB button</strong> (or click <strong>Capture &amp; Send</strong>) to photograph &amp; queue.</div>
 
                     <!-- Duplicate-alert volume: per-station (localStorage), tuned to floor noise -->
@@ -229,6 +229,18 @@
 <!-- Duplicate-label modal: shown (with a buzz) when a scanned barcode was
      already captured. OVERWRITE is click-only — Enter is swallowed while the
      modal is open so an accidental re-scan can never trigger it. -->
+<!-- Capture log: every timed capture, split into accepted (table record still
+     exists) and nulled (record deleted on the Table Photos page). -->
+<div class="modal-overlay" id="caplog-modal" role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal" style="max-width:900px;">
+        <div class="modal-header" id="caplog-title">Capture log</div>
+        <div class="modal-body" id="caplog-body" style="max-height:70vh; overflow:auto;"></div>
+        <div class="modal-actions">
+            <button class="btn-success" id="caplog-close" type="button">Close</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="dup-modal" role="dialog" aria-modal="true" tabindex="-1">
     <div class="modal" style="max-width:520px;">
         <div class="modal-header">⚠️ Label already scanned</div>
@@ -263,6 +275,6 @@
 <script src="js/api.js?v=16"></script>
 <script src="js/utils.js"></script>
 <script src="js/insole_parse.js?v=2"></script>
-<script src="js/capture.js?v=25"></script>
+<script src="js/capture.js?v=26"></script>
 </body>
 </html>

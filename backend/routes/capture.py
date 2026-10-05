@@ -156,7 +156,7 @@ import time
 from backend.config import BASE_DIR
 _TIMING_CSV = BASE_DIR / "capture_timing.csv"
 _timing = {"count": 0, "last_perf": None, "last_gap": None, "gap_sum": 0.0, "gap_n": 0,
-           "since": None, "last_ts": None, "csv_mtime": None, "gaps": []}
+           "since": None, "last_ts": None, "csv_mtime": None, "gaps": [], "rows": []}
 # "Active" average: breaks, lunches and overnight gaps are logged like any
 # other gap (the log stays raw and honest) but swamp a plain mean (1747 s vs
 # a 96 s median on the first week). User's rule (2026-10-05): a gap counts as
@@ -176,12 +176,14 @@ def _timing_init():
         _timing["csv_mtime"] = _TIMING_CSV.stat().st_mtime
     except (FileNotFoundError, OSError):
         return
-    _timing.update(count=0, last_gap=None, gap_sum=0.0, gap_n=0, since=None, last_ts=None, gaps=[])
+    _timing.update(count=0, last_gap=None, gap_sum=0.0, gap_n=0, since=None, last_ts=None, gaps=[], rows=[])
     for r in rows:
         try:
             n, ts, gap = int(r[0]), r[1], r[2]
         except (ValueError, IndexError):
             continue
+        _timing["rows"].append({"n": n, "ts": ts, "gap": float(gap) if gap else None,
+                                "table_id": r[3] if len(r) > 3 and r[3] else None})
         _timing["count"] = max(_timing["count"], n)
         _timing["last_ts"] = ts
         if _timing["since"] is None:
@@ -196,7 +198,7 @@ def _timing_init():
 _timing_init()
 
 
-def _record_capture_timing():
+def _record_capture_timing(table_id=None):
     """Called ONLY after a capture's DB commit. Cheap: one perf_counter read
     and one CSV line append (~0.1 ms); any I/O error is swallowed so timing
     can never break a capture."""
@@ -224,14 +226,15 @@ def _record_capture_timing():
             _timing["gap_n"] += 1
             _timing["gaps"].append(gap)
         n = _timing["count"]
+        _timing["rows"].append({"n": n, "ts": _timing["last_ts"], "gap": gap, "table_id": table_id})
     try:
         new = not _TIMING_CSV.exists()
         with open(_TIMING_CSV, "a", newline="") as f:
             w = csv.writer(f)
             if new:
-                w.writerow(["capture_number", "timestamp", "seconds_since_previous"])
+                w.writerow(["capture_number", "timestamp", "seconds_since_previous", "table_id"])
             w.writerow([n, wall.isoformat(timespec="milliseconds"),
-                        "" if gap is None else f"{gap:.3f}"])
+                        "" if gap is None else f"{gap:.3f}", table_id or ""])
         _timing["csv_mtime"] = _TIMING_CSV.stat().st_mtime
     except OSError:                                    # never fail a capture over a log line
         pass
@@ -464,6 +467,62 @@ def capture_preview(frame: UploadFile = File(...),
     return out
 
 
+@router.get("/capture-stats/log", summary="Capture log: every timed capture, accepted vs nulled")
+def capture_stats_log(limit: int = Query(300, ge=1, le=2000),
+                      conn: sqlite3.Connection = Depends(get_db)):
+    """Every row of capture_timing.csv (newest first) joined to its table
+    record. A capture is NULLED when its table record no longer exists -- the
+    Table Photos delete button removes the row outright, so absence IS the
+    signal; ACCEPTED otherwise (with its processing status + pair count).
+    Rows logged before table ids were recorded are matched by timestamp."""
+    with _timing_lock:
+        _timing_refresh_locked()
+        rows = list(_timing["rows"])[-limit:]
+    ids = [r["table_id"] for r in rows if r["table_id"]]
+    found = {}
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        for t in conn.execute(
+                f"SELECT id, status, num_pairs, barcode, created_at FROM table_photos "
+                f"WHERE id IN ({','.join('?' * len(chunk))})", chunk):
+            found[t["id"]] = dict(t)
+    # timestamp match for legacy rows (no id): nearest created_at within 3 s
+    legacy = [r for r in rows if not r["table_id"]]
+    if legacy:
+        lo = min(r["ts"] for r in legacy)[:19]; hi = max(r["ts"] for r in legacy)[:19]
+        cand = [dict(t) for t in conn.execute(
+            "SELECT id, status, num_pairs, barcode, created_at FROM table_photos "
+            "WHERE substr(created_at,1,19) BETWEEN datetime(?, '-5 seconds') AND datetime(?, '+5 seconds')",
+            (lo.replace("T", " "), hi.replace("T", " ")))]
+        for r in legacy:
+            try:
+                t0 = datetime.fromisoformat(r["ts"])
+            except ValueError:
+                continue
+            best = None
+            for t in cand:
+                try:
+                    d = abs((datetime.fromisoformat(t["created_at"]) - t0).total_seconds())
+                except ValueError:
+                    continue
+                if d <= 3 and (best is None or d < best[0]):
+                    best = (d, t)
+            if best:
+                r["table_id"] = best[1]["id"]; found[best[1]["id"]] = best[1]
+    accepted, nulled = [], []
+    for r in reversed(rows):
+        t = found.get(r["table_id"]) if r["table_id"] else None
+        item = {"capture_number": r["n"], "at": r["ts"], "gap_sec": r["gap"],
+                "table_id": r["table_id"]}
+        if t:
+            item.update(status=t["status"], num_pairs=t["num_pairs"], barcode=t["barcode"])
+            accepted.append(item)
+        else:
+            nulled.append(item)
+    return {"accepted": accepted, "nulled": nulled,
+            "counts": {"accepted": len(accepted), "nulled": len(nulled)}}
+
+
 @router.get("/barcode-check/{barcode}", summary="Is this barcode already captured?")
 def barcode_check(barcode: str, conn: sqlite3.Connection = Depends(get_db)):
     """Scan-time duplicate lookup for the Capture page: called on every barcode
@@ -665,7 +724,7 @@ async def capture(
             box.update(summaries_from_parse(insole_counts))
     _enqueue_outbox(conn, tp_id, barcode, box)
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
-    _record_capture_timing()                     # success: row committed + returned
+    _record_capture_timing(tp_id)                # success: row committed + returned
     return table_photo_to_dict(row)
 
 
