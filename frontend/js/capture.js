@@ -213,14 +213,16 @@
                 const since = t.since
                     ? " (since " + new Date(t.since + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + ")"
                     : "";
-                // "Average" = active average (breaks/overnight gaps excluded by a
-                // median+MAD cut on the server); the raw all-time mean is in the tooltip.
+                // "Average" = active average: gaps over 60 s (pauses) are excluded
+                // on the server; the raw all-time mean is in the tooltip.
                 const avg = t.active_avg_sec != null ? t.active_avg_sec : t.avg_sec;
-                capTiming.textContent = "Last capture: " + fmt(t.last_sec)
+                const lastAt = t.last_at
+                    ? " (" + new Date(t.last_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + ")"
+                    : "";
+                capTiming.textContent = "Last capture: " + fmt(t.last_sec) + lastAt
                     + " · Average: " + fmt(avg) + since + " · Captures: " + t.captures;
-                capTiming.title = "Active average excludes " + (t.active_excluded || 0)
-                    + " pause(s) longer than " + (t.active_cutoff_sec != null ? Math.round(t.active_cutoff_sec / 60) + " min" : "–")
-                    + ". Raw all-time mean: " + fmt(t.avg_sec);
+                capTiming.title = "Average counts only gaps of " + Math.round(t.active_cutoff_sec || 60)
+                    + " s or less (" + (t.active_excluded || 0) + " longer pause(s) excluded). Raw all-time mean: " + fmt(t.avg_sec);
             }
         } catch (e) { /* cosmetic only */ }
     }
