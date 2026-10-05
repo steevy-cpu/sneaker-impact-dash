@@ -27,29 +27,37 @@ def _camel(make: str) -> str:
 
 
 def _already_exported(folder, source_photo, source_pair) -> bool:
-    if not os.path.isdir(folder):
-        return False
-    for f in os.listdir(folder):
-        if not f.endswith(".json"):
-            continue
-        try:
-            with open(os.path.join(folder, f)) as fh:
-                d = json.load(fh)
-        except Exception:
-            continue
-        if d.get("source_photo") == source_photo and d.get("source_pair") == source_pair:
-            return True
-    return False
+    """Indexed lookup via label_index (perf review 2026-10-05: this used to
+    open and parse all 66k sidecars for EVERY exported pair, inside the live
+    table pipeline). The index is refreshed first (one scandir, no reads when
+    nothing changed) so a sidecar written by another process is seen too."""
+    from backend.database import get_connection
+    from backend.services import label_index
+    conn = get_connection()
+    try:
+        label_index.refresh(conn)
+        return label_index.already_exported(conn, source_photo, source_pair)
+    finally:
+        conn.close()
 
 
 def _next_n(folder, color, make) -> int:
+    """Next sequence number for shoes_<color>_<make>_N.jpg from the index
+    (one LIKE over ~66k indexed rows) instead of a regex over 132k filenames."""
+    from backend.database import get_connection
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT filename FROM label_index WHERE LOWER(filename) LIKE LOWER(?)",
+            (f"shoes_{color}_{make}_%",)).fetchall()
+    finally:
+        conn.close()
     pat = re.compile(rf"shoes_{re.escape(color)}_{re.escape(make)}_(\d+)\.jpg$", re.I)
     mx = 0
-    if os.path.isdir(folder):
-        for f in os.listdir(folder):
-            m = pat.match(f)
-            if m:
-                mx = max(mx, int(m.group(1)))
+    for (f,) in rows:
+        m = pat.match(f)
+        if m:
+            mx = max(mx, int(m.group(1)))
     return mx + 1
 
 
@@ -93,6 +101,16 @@ def export_label(crop_path, *, color, make, model, make_conf, model_conf,
         }
         with open(os.path.join(folder, base + ".json"), "w") as f:
             json.dump(meta, f, indent=2)
+        try:                                           # index it now (no rescan needed)
+            from backend.database import get_connection
+            from backend.services import label_index
+            conn = get_connection()
+            try:
+                label_index.record_export(conn, base + ".jpg", meta)
+            finally:
+                conn.close()
+        except Exception as exc:                       # noqa: BLE001 - the next refresh picks it up
+            print(f"[label_export] index update failed (non-fatal): {exc}")
         return base + ".jpg"
     except Exception as exc:                           # noqa: BLE001 - fail safe
         print(f"[label_export] failed for {source_photo}/{source_pair}: {exc}")

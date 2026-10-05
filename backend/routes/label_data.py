@@ -11,13 +11,15 @@ route exposes that folder read-only so the dash can show the growing dataset:
 Images themselves are served by the `/label_images` static mount (see main.py).
 Fail-safe: a missing/empty folder yields an empty list, never an error.
 """
-import json
 import os
 import re
+import sqlite3
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.config import LABEL_DATA_DIR
+from backend.database import get_db
+from backend.services import label_index
 
 router = APIRouter(prefix="/api/label-data", tags=["Label Data"])
 
@@ -29,77 +31,35 @@ _SAFE_NAME = re.compile(r"^[\w.\-]+\.jpg$")
 _IMG_URL = "/label_images"
 
 
-# Parsed-entries cache. The folder only changes when the worker exports a new
-# label, the re-identify backfill rewrites a sidecar, or someone deletes a
-# crop — so a stat-only scan (count + newest mtime) detects staleness without
-# opening every JSON on each page view.
-_cache = {"key": None, "entries": []}
+_META_SELECT = ("filename, make, model, detected_color, make_confidence, "
+                "model_confidence, source_photo, source_pair, timestamp, exported_by")
 
 
-def _folder_key(folder):
-    n, newest = 0, 0
-    with os.scandir(folder) as it:
-        for de in it:
-            n += 1
-            newest = max(newest, de.stat().st_mtime_ns)
-    return (n, newest)
-
-
-def _load_entries():
-    """Read every <name>.jpg in LABEL_DATA_DIR, attaching its .json sidecar
-    metadata when present. Newest first (by timestamp, then filename)."""
-    folder = str(LABEL_DATA_DIR)
-    if not os.path.isdir(folder):
-        return []
-    try:
-        key = _folder_key(folder)
-        if key is not None and key == _cache["key"]:
-            return _cache["entries"]
-    except OSError:                                      # fail safe: just rebuild
-        key = None
-    entries = []
-    for fn in os.listdir(folder):
-        if not fn.lower().endswith(".jpg"):
-            continue
-        meta = {}
-        side = os.path.join(folder, fn[:-4] + ".json")
-        if os.path.isfile(side):
-            try:
-                with open(side) as fh:
-                    meta = json.load(fh)
-            except Exception:                            # noqa: BLE001 - fail safe
-                meta = {}
-        entries.append({
-            "filename":         fn,
-            "image_url":        f"{_IMG_URL}/{fn}",
-            "make":             meta.get("make"),
-            "model":            meta.get("model"),
-            "detected_color":   meta.get("detected_color"),
-            "make_confidence":  meta.get("make_confidence"),
-            "model_confidence": meta.get("model_confidence"),
-            "source_photo":     meta.get("source_photo"),
-            "source_pair":      meta.get("source_pair"),
-            "timestamp":        meta.get("timestamp"),
-            "exported_by":      meta.get("exported_by"),
-        })
-    entries.sort(key=lambda e: (e.get("timestamp") or "", e["filename"]), reverse=True)
-    if key is not None:
-        _cache["key"], _cache["entries"] = key, entries
-    return entries
-
-
-def _stats(entries):
-    by_make, by_color = {}, {}
-    for e in entries:
-        mk = (e.get("make") or "unknown")
-        col = (e.get("detected_color") or "unknown")
-        by_make[mk] = by_make.get(mk, 0) + 1
-        by_color[col] = by_color.get(col, 0) + 1
+def _row_to_entry(r):
+    fn = r["filename"]
     return {
-        "total":    len(entries),
-        "by_make":  dict(sorted(by_make.items(), key=lambda kv: kv[1], reverse=True)),
-        "by_color": dict(sorted(by_color.items(), key=lambda kv: kv[1], reverse=True)),
+        "filename":         fn,
+        "image_url":        f"{_IMG_URL}/{fn}",
+        "make":             r["make"],
+        "model":            r["model"],
+        "detected_color":   r["detected_color"],
+        "make_confidence":  r["make_confidence"],
+        "model_confidence": r["model_confidence"],
+        "source_photo":     r["source_photo"],
+        "source_pair":      r["source_pair"],
+        "timestamp":        r["timestamp"],
+        "exported_by":      r["exported_by"],
     }
+
+
+def _stats(conn):
+    """Counts over the FULL set, straight from the index (two GROUP BYs)."""
+    total = conn.execute("SELECT COUNT(*) FROM label_index").fetchone()[0]
+    by_make = {(m or "unknown"): n for m, n in conn.execute(
+        "SELECT make, COUNT(*) FROM label_index GROUP BY make ORDER BY COUNT(*) DESC")}
+    by_color = {(c or "unknown"): n for c, n in conn.execute(
+        "SELECT detected_color, COUNT(*) FROM label_index GROUP BY detected_color ORDER BY COUNT(*) DESC")}
+    return {"total": total, "by_make": by_make, "by_color": by_color}
 
 
 @router.get("", summary="List curated label_data entries")
@@ -108,23 +68,31 @@ def list_label_data(
     color:     str = Query(None, description="filter by detected_color"),
     page:      int = Query(1, ge=1),
     page_size: int = Query(60, ge=1, le=500),
+    conn: sqlite3.Connection = Depends(get_db),
 ):
-    entries = _load_entries()
-    stats = _stats(entries)                    # stats over the FULL set
+    # Perf review 2026-10-05: served from the label_index table (see
+    # backend/services/label_index.py) -- was a 132k-entry stat scan per
+    # request plus a 66k-sidecar re-parse on any change (13 s page loads).
+    label_index.refresh(conn)
+    where, params = [], []
     if make:
-        entries = [e for e in entries if (e.get("make") or "").lower() == make.lower()]
+        where.append("LOWER(make) = LOWER(?)"); params.append(make)
     if color:
-        entries = [e for e in entries if (e.get("detected_color") or "").lower() == color.lower()]
-    total = len(entries)
-    start = (page - 1) * page_size
-    items = entries[start:start + page_size]
-    return {"items": items, "total": total, "page": page,
-            "page_size": page_size, "stats": stats}
+        where.append("LOWER(detected_color) = LOWER(?)"); params.append(color)
+    sql_where = ("WHERE " + " AND ".join(where)) if where else ""
+    total = conn.execute(f"SELECT COUNT(*) FROM label_index {sql_where}", params).fetchone()[0]
+    rows = conn.execute(
+        f"SELECT {_META_SELECT} FROM label_index {sql_where} "
+        f"ORDER BY timestamp DESC, filename DESC LIMIT ? OFFSET ?",
+        params + [page_size, (page - 1) * page_size]).fetchall()
+    return {"items": [_row_to_entry(r) for r in rows], "total": total, "page": page,
+            "page_size": page_size, "stats": _stats(conn)}
 
 
 @router.get("/stats", summary="Label_data counts (total, by make, by color)")
-def label_data_stats():
-    return _stats(_load_entries())
+def label_data_stats(conn: sqlite3.Connection = Depends(get_db)):
+    label_index.refresh(conn)
+    return _stats(conn)
 
 
 @router.delete("/{filename}", summary="Delete one label_data crop (+ its JSON)")
@@ -149,4 +117,13 @@ def delete_label_data(filename: str):
                 removed.append(os.path.basename(path))
         except OSError as exc:
             raise HTTPException(status_code=500, detail=f"Delete failed: {exc}")
+    try:
+        from backend.database import get_connection
+        c = get_connection()
+        try:
+            label_index.forget(c, filename)
+        finally:
+            c.close()
+    except Exception:                                  # noqa: BLE001 - next refresh reconciles
+        pass
     return {"deleted": True, "removed": removed}

@@ -221,6 +221,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_shoe_memory_embedder ON shoe_memory(embedder);
         CREATE INDEX IF NOT EXISTS idx_shoe_memory_brand    ON shoe_memory(brand);
     """)
+    # label_data folder index (perf review 2026-10-05) -- see services/label_index.py
+    from backend.services import label_index
+    label_index.ensure_schema(conn)
 
     conn.commit()
     _add_columns_if_missing(conn)
