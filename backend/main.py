@@ -23,7 +23,7 @@ from backend.config import (APP_MODE, IMAGES_DIR, SIM_IMAGES_DIR, FRONTEND_DIR,
                             TABLE_PHOTOS_DIR, PAIRS_DIR, LABEL_DATA_DIR,
                             IT_PASSWORD)
 from backend.database import init_db, get_connection
-from backend.routes import (airtable_outbox, analytics, batches, capture,
+from backend.routes import (ai_database, airtable_outbox, analytics, batches, capture,
                             config_station, export, health, it_auth, label_data,
                             labeling, pairs, public_crops, reidentify, shipment,
                             shoes, simulation, tableau)
@@ -210,6 +210,7 @@ app.include_router(tableau.router)         # dataset/AI/sync visualizations: /ap
 app.include_router(labeling.router)        # multi-worker table claiming: /api/labeling/*
 app.include_router(public_crops.router)     # signed public crop serving (Lens): /public/crop/*
 app.include_router(it_auth.router)          # IT gate login: /it, /api/it/*
+app.include_router(ai_database.router)      # AI Database page search: /api/ai-database/*
 
 
 # ---------------------------------------------------------------------------

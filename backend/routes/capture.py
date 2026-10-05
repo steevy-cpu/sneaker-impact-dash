@@ -144,6 +144,113 @@ def _clean_barcode(barcode):
     return bc
 
 
+# --- Capture timing (2026-09-30) -------------------------------------------
+# Time between SUCCESSFUL captures (a row committed by /api/capture), measured
+# with time.perf_counter(), plus a running count/average for the capture page
+# and a CSV log (capture_timing.csv, repo root, gitignored) for later analysis:
+#   capture_number, timestamp, seconds_since_previous
+# The first capture after a server start has no previous perf_counter reading,
+# so its gap is blank. Failed captures never reach _record_capture_timing().
+import csv
+import time
+from backend.config import BASE_DIR
+_TIMING_CSV = BASE_DIR / "capture_timing.csv"
+_timing = {"count": 0, "last_perf": None, "last_gap": None, "gap_sum": 0.0, "gap_n": 0,
+           "since": None, "last_ts": None, "csv_mtime": None}
+_timing_lock = threading.Lock()
+
+
+def _timing_init():
+    """Rebuild the ALL-TIME stats from the CSV so the count, the average and
+    the "since" date survive restarts (the CSV is the source of truth; memory
+    just caches it). Blank gaps (first capture after a restart) are skipped."""
+    try:
+        with open(_TIMING_CSV, newline="") as f:
+            rows = list(csv.reader(f))[1:]
+        _timing["csv_mtime"] = _TIMING_CSV.stat().st_mtime
+    except (FileNotFoundError, OSError):
+        return
+    _timing.update(count=0, last_gap=None, gap_sum=0.0, gap_n=0, since=None, last_ts=None)
+    for r in rows:
+        try:
+            n, ts, gap = int(r[0]), r[1], r[2]
+        except (ValueError, IndexError):
+            continue
+        _timing["count"] = max(_timing["count"], n)
+        _timing["last_ts"] = ts
+        if _timing["since"] is None:
+            _timing["since"] = ts[:10]
+        if gap:
+            _timing["gap_sum"] += float(gap)
+            _timing["gap_n"] += 1
+            _timing["last_gap"] = float(gap)
+
+
+_timing_init()
+
+
+def _record_capture_timing():
+    """Called ONLY after a capture's DB commit. Cheap: one perf_counter read
+    and one CSV line append (~0.1 ms); any I/O error is swallowed so timing
+    can never break a capture."""
+    now = time.perf_counter()
+    wall = datetime.now()
+    with _timing_lock:
+        _timing_refresh_locked()                     # pick up rows the other instance wrote
+        if _timing["last_perf"] is not None:
+            gap = now - _timing["last_perf"]                  # precise, same process
+        elif _timing["last_ts"]:
+            try:                                              # across a restart
+                gap = (wall - datetime.fromisoformat(_timing["last_ts"])).total_seconds()
+            except ValueError:
+                gap = None
+        else:
+            gap = None
+        _timing["last_perf"] = now
+        _timing["last_ts"] = wall.isoformat(timespec="milliseconds")
+        _timing["count"] += 1
+        if _timing["since"] is None:
+            _timing["since"] = datetime.now().strftime("%Y-%m-%d")
+        _timing["last_gap"] = gap
+        if gap is not None:
+            _timing["gap_sum"] += gap
+            _timing["gap_n"] += 1
+        n = _timing["count"]
+    try:
+        new = not _TIMING_CSV.exists()
+        with open(_TIMING_CSV, "a", newline="") as f:
+            w = csv.writer(f)
+            if new:
+                w.writerow(["capture_number", "timestamp", "seconds_since_previous"])
+            w.writerow([n, wall.isoformat(timespec="milliseconds"),
+                        "" if gap is None else f"{gap:.3f}"])
+        _timing["csv_mtime"] = _TIMING_CSV.stat().st_mtime
+    except OSError:                                    # never fail a capture over a log line
+        pass
+
+
+def _timing_refresh_locked():
+    """Two server instances (http/https) share one CSV: if the file changed
+    since we last parsed it, rebuild from it so both report the same numbers.
+    One stat() per call; the file is a few KB."""
+    try:
+        m = _TIMING_CSV.stat().st_mtime
+    except OSError:
+        return
+    if m != _timing["csv_mtime"]:
+        _timing_init()
+
+
+def _timing_snapshot():
+    with _timing_lock:
+        _timing_refresh_locked()
+        avg = _timing["gap_sum"] / _timing["gap_n"] if _timing["gap_n"] else None
+        return {"captures": _timing["count"],
+                "last_sec": None if _timing["last_gap"] is None else round(_timing["last_gap"], 2),
+                "avg_sec": None if avg is None else round(avg, 2),
+                "since": _timing["since"]}          # first day in the CSV
+
+
 # Hard requirement (2026-09-02): every capture must carry a scanned tracking
 # barcode — without one the box's counts can NEVER match an Airtable shipment
 # row (11 barcode-less boxes silently never synced). FedEx tracking numbers are
@@ -267,7 +374,8 @@ def capture_stats_today(conn: sqlite3.Connection = Depends(get_db)):
         "SELECT COUNT(*) AS n FROM table_photos WHERE id LIKE ?",
         (f"{prefix}%",),
     ).fetchone()
-    return {"date": datetime.now().strftime("%Y-%m-%d"), "tables_today": row["n"]}
+    return {"date": datetime.now().strftime("%Y-%m-%d"), "tables_today": row["n"],
+            "timing": _timing_snapshot()}
 
 
 _placement_cfg = PlacementConfig.from_app_config()
@@ -537,6 +645,7 @@ async def capture(
             box.update(summaries_from_parse(insole_counts))
     _enqueue_outbox(conn, tp_id, barcode, box)
     row = conn.execute("SELECT * FROM table_photos WHERE id = ?", (tp_id,)).fetchone()
+    _record_capture_timing()                     # success: row committed + returned
     return table_photo_to_dict(row)
 
 

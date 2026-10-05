@@ -50,6 +50,14 @@ sys.path.insert(0, os.getcwd())
 
 MAX_BODY = 4 * 1024 * 1024          # frames arrive ~100KB; reject anything wild
 
+# CPU thread cap (2026-10-05): torch defaults to one thread per core (24) for
+# the small CPU-side work around each frame (decode, pre/post-processing) --
+# measured ~590% CPU for a 0.8 s/frame GPU job, i.e. 6 cores thrashing and the
+# box's load average at 7-12 with nothing else running. 4 threads is plenty;
+# the GPU does the real work.
+import torch
+torch.set_num_threads(4)
+
 _lock = threading.Lock()            # one inference (and one load) at a time
 _segmenter = None
 

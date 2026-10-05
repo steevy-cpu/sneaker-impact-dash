@@ -284,6 +284,16 @@ def _set_path_hint(segmenter, image_path):
 
 
 def main():
+    # CPU thread cap (2026-10-05): torch defaults to one thread per core (24),
+    # which THRASHES on this box -- the preview worker measured 1124% CPU for
+    # a GPU-bound job and got FASTER (1.43 -> 0.78 s/frame) at 4 threads. The
+    # engine's CPU-side work (crop/mask/colour, DINOv2 pre/post) is the same
+    # shape. Set before any model loads.
+    try:
+        import torch
+        torch.set_num_threads(4)
+    except Exception:                                   # noqa: BLE001 - never block a job
+        pass
     ap = argparse.ArgumentParser(description="Run the pipeline on one table photo.")
     ap.add_argument("--engine-dir", required=True, help="sneaker_impact_training dir")
     ap.add_argument("--image", required=True)

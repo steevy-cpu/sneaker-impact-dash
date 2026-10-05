@@ -212,6 +212,10 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_table_photos_barcode ON table_photos(barcode);
         CREATE INDEX IF NOT EXISTS idx_pairs_table_photo    ON pairs(table_photo_id);
         CREATE INDEX IF NOT EXISTS idx_pairs_review         ON pairs(review_status);
+        -- Pairs Review lists PENDING newest-first: without (status, created_at)
+        -- SQLite walks ~60k PENDING rows into a temp sort per page (228 ms at
+        -- 104k pairs, 2026-10-05); this composite index makes it 2 ms.
+        CREATE INDEX IF NOT EXISTS idx_pairs_review_created ON pairs(review_status, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_pairs_created        ON pairs(created_at);
         CREATE INDEX IF NOT EXISTS idx_outbox_status        ON airtable_outbox(status);
         CREATE INDEX IF NOT EXISTS idx_shoe_memory_embedder ON shoe_memory(embedder);

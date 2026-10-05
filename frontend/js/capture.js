@@ -53,6 +53,7 @@
     const nobcModal = document.getElementById("nobc-modal");
     const nobcOkBtn = document.getElementById("nobc-ok");
     const todayCount = document.getElementById("today-count");
+    const capTiming = document.getElementById("cap-timing");
     const buzzVolume = document.getElementById("buzz-volume");
     const buzzVolumeLabel = document.getElementById("buzz-volume-label");
     const buzzTestBtn = document.getElementById("buzz-test");
@@ -206,6 +207,15 @@
             if (!r.ok) return;
             const d = await r.json();
             todayCount.textContent = d.tables_today;
+            const t = d.timing;
+            if (t && capTiming) {
+                const fmt = v => (v == null ? "–" : v.toFixed(2) + " sec");
+                const since = t.since
+                    ? " (since " + new Date(t.since + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + ")"
+                    : "";
+                capTiming.textContent = "Last capture: " + fmt(t.last_sec)
+                    + " · Average: " + fmt(t.avg_sec) + since + " · Captures: " + t.captures;
+            }
         } catch (e) { /* cosmetic only */ }
     }
     setInterval(() => { if (!document.hidden) refreshTodayCount(); }, 60000);
@@ -655,9 +665,34 @@
 
     const previewOverlay = document.getElementById("preview-overlay");
     const previewBadge = document.getElementById("preview-badge");
-    const PREVIEW_TICK_MS = 2500;
+    // Adaptive cadence (2026-09-21): FAST while someone is arranging shoes
+    // (detections changed within the last PREVIEW_STATIC_MS), SLOW while a
+    // table is processing (GPU belongs to the engine) or the scene has been
+    // static -- so the GPU only runs hot in the moments the feedback matters.
+    // The loop is self-pacing (next frame only after the previous reply), so
+    // FAST effectively means "as fast as SAM3 answers", ~1 update/s.
+    const PREVIEW_TICK_FAST_MS = 300;
+    const PREVIEW_TICK_SLOW_MS = 2500;
+    const PREVIEW_STATIC_MS = 30000;
     const PREVIEW_SEND_W = 1280;         // downscale width sent to the server
     let previewEnabled = false;
+    let previewQueueBusy = false;        // server said a table is processing/pending
+    let previewLastChangeAt = 0;         // last time the detections changed
+    let previewLastSig = "";             // coarse signature of the last result
+
+    function previewSignature(res) {
+        // Coarse: 8px grid + status, so camera noise doesn't count as "change".
+        const pl = res.placement;
+        const items = pl && pl.objects
+            ? pl.objects.map(o => o.placement_status[0] + (o.bbox[0] >> 3) + "," + (o.bbox[1] >> 3) + "," + (o.bbox[2] >> 3) + "," + (o.bbox[3] >> 3))
+            : res.boxes.map(b => (b.x1 >> 3) + "," + (b.y1 >> 3) + "," + (b.x2 >> 3) + "," + (b.y2 >> 3));
+        return items.sort().join("|");
+    }
+    function previewNextDelay() {
+        const staticFor = Date.now() - previewLastChangeAt;
+        return (previewQueueBusy || staticFor > PREVIEW_STATIC_MS)
+            ? PREVIEW_TICK_SLOW_MS : PREVIEW_TICK_FAST_MS;
+    }
 
     function previewSetBadge(text) {
         previewBadge.textContent = text;
@@ -806,6 +841,9 @@
                 previewSetBadge("guide warming up…");
                 return;
             }
+            previewQueueBusy = !!res.queue;
+            const sig = previewSignature(res);
+            if (sig !== previewLastSig) { previewLastSig = sig; previewLastChangeAt = Date.now(); }
             previewDraw(res);
         } catch (e) { /* cosmetic feature -- never interfere with capture */ }
     }
@@ -821,10 +859,11 @@
             previewSetBadge("guide starting…");
             // Self-pacing loop: next tick is scheduled only after this one
             // fully finishes, so slow replies can never stack up requests.
+            previewLastChangeAt = Date.now();     // start FAST: someone just opened the page
             (async function loop() {
                 while (previewEnabled) {
                     await previewTick();
-                    await new Promise(r => setTimeout(r, PREVIEW_TICK_MS));
+                    await new Promise(r => setTimeout(r, previewNextDelay()));
                 }
             })();
         } catch (e) { /* server unreachable -> guide stays hidden */ }
