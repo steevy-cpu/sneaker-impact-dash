@@ -489,10 +489,14 @@ def capture_stats_log(limit: int = Query(300, ge=1, le=2000),
     # timestamp match for legacy rows (no id): nearest created_at within 3 s
     legacy = [r for r in rows if not r["table_id"]]
     if legacy:
+        # created_at is stored ISO with a 'T'; SQLite's datetime() emits a
+        # space, so compare on the 'T' form explicitly (a plain BETWEEN with
+        # datetime() silently matched nothing -- bitten 2026-10-05).
         lo = min(r["ts"] for r in legacy)[:19]; hi = max(r["ts"] for r in legacy)[:19]
         cand = [dict(t) for t in conn.execute(
             "SELECT id, status, num_pairs, barcode, created_at FROM table_photos "
-            "WHERE substr(created_at,1,19) BETWEEN datetime(?, '-5 seconds') AND datetime(?, '+5 seconds')",
+            "WHERE created_at >= replace(datetime(?, '-5 seconds'), ' ', 'T') "
+            "  AND created_at <= replace(datetime(?, '+5 seconds'), ' ', 'T')",
             (lo.replace("T", " "), hi.replace("T", " ")))]
         for r in legacy:
             try:
