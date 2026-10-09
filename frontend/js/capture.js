@@ -213,16 +213,16 @@
                 const since = t.since
                     ? " (since " + new Date(t.since + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + ")"
                     : "";
-                // "Average" = active average: gaps over 60 s (pauses) are excluded
-                // on the server; the raw all-time mean is in the tooltip.
+                // "Average" = active average: gaps of 160 s or more (pauses) are
+                // excluded on the server; the raw all-time mean is in the tooltip.
                 const avg = t.active_avg_sec != null ? t.active_avg_sec : t.avg_sec;
                 const lastAt = t.last_at
                     ? " (" + new Date(t.last_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + ")"
                     : "";
                 capTiming.textContent = "Last capture: " + fmt(t.last_sec) + lastAt
                     + " · Average: " + fmt(avg) + since + " · Captures: " + t.captures;
-                capTiming.title = "Average counts only gaps of " + Math.round(t.active_cutoff_sec || 60)
-                    + " s or less (" + (t.active_excluded || 0) + " longer pause(s) excluded). Raw all-time mean: " + fmt(t.avg_sec);
+                capTiming.title = "Average counts only captures under " + Math.round(t.active_cutoff_sec || 160)
+                    + " s (" + (t.active_excluded || 0) + " longer pause(s) excluded, shown as null in the log). Raw all-time mean: " + fmt(t.avg_sec);
             }
         } catch (e) { /* cosmetic only */ }
     }
@@ -635,26 +635,28 @@
     let insoleTextEnabled = false;   // station-config flag: insole_text_field
 
     function applyInsoleMode() {
-        insoleMode = insoleToggle.checked;
+        insoleMode = !!(insoleToggle && insoleToggle.checked);
         SHOE_COUNT_FIELDS.forEach((el) => {
             const cell = el.closest(".box-field");
             if (cell) cell.style.display = insoleMode ? "none" : "";
             if (insoleMode) el.value = "";
         });
-        insoleBadge.style.display = insoleMode ? "" : "none";
-        insoleModeLabel.textContent = insoleMode ? "🦶 Insoles" : "👟 Shoes";
+        if (insoleBadge) insoleBadge.style.display = insoleMode ? "" : "none";
+        if (insoleModeLabel) insoleModeLabel.textContent = insoleMode ? "🦶 Insoles" : "👟 Shoes";
         // Notes-extraction preview is for insoles in a SHOE box; in insole-only
         // mode the engine counts, so the preview goes quiet.
         updateInsolePreview();
         capError.style.display = "none";
         barcodeInput.focus();
     }
-    insoleToggle.addEventListener("change", applyInsoleMode);
+    // The capture-mode toggle was removed from the page (2026-10-05); these
+    // stay null-safe so the flag-gated insole path can be restored later.
+    if (insoleToggle) insoleToggle.addEventListener("change", applyInsoleMode);
 
     async function initInsoleFlag() {
         try {
             const cfg = await api.getStationConfig();
-            if (cfg && cfg.insole_mode) insoleRow.style.display = "flex";
+            if (cfg && cfg.insole_mode && insoleRow) insoleRow.style.display = "flex";
             if (cfg && cfg.insole_text_field) {
                 insoleTextEnabled = true;   // enables the notes-extraction preview
                 updateInsolePreview();
@@ -890,7 +892,7 @@
             <tr>
                 <td class="td-muted">${r.capture_number}</td>
                 <td>${capTimeFmt(r.at)}</td>
-                <td style="font-variant-numeric:tabular-nums;">${r.gap_sec == null ? "–" : r.gap_sec.toFixed(2) + " s"}</td>
+                <td style="font-variant-numeric:tabular-nums;" ${r.counted ? "" : `class="td-muted" title="Not counted in the average${r.raw_gap_sec == null ? "" : " (" + r.raw_gap_sec.toFixed(0) + " s pause)"}"`}>${r.counted ? r.gap_sec.toFixed(2) + " s" : "null"}</td>
                 <td class="font-mono text-sm">${r.table_id || "–"}</td>
                 ${kind === "accepted" ? `<td class="text-sm">${r.status || "–"} · ${r.num_pairs == null ? "–" : r.num_pairs + " pairs"}</td>` : ""}
             </tr>`).join("");

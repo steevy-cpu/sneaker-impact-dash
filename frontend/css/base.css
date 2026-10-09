@@ -133,7 +133,7 @@ h1, h2, h3, h4 { margin: 0; }
    ---------------------------------------------------------------- */
 .layout {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-columns: 1fr;            /* nav is a dropdown, not a column (2026-10-05) */
   grid-template-rows: var(--header-h) 1fr;
   min-height: 100vh;
 }
@@ -163,9 +163,26 @@ h1, h2, h3, h4 { margin: 0; }
   padding: 0 20px;
   border-right: 1px solid rgba(255,255,255,0.08);
   white-space: nowrap;
-  width: var(--sidebar-w);
+  padding-right: 12px;
   flex-shrink: 0;
 }
+
+/* ── Dropdown navigation (2026-10-05) ─────────────────────────────────────
+   The sidebar no longer takes a permanent column (see .layout / .sidebar /
+   .main): the page content gets the full width. This chevron, injected by
+   theme.js right after the logo on every page, toggles body.nav-open which
+   shows <nav class="sidebar"> as a dropdown panel under the header. Click
+   outside, Esc, or picking a link closes it. */
+.nav-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; margin: 0 14px 0 2px; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.18); border-radius: 6px;
+  background: rgba(255,255,255,0.06); color: #fff; cursor: pointer;
+  transition: background .15s;
+}
+.nav-toggle:hover, body.nav-open .nav-toggle { background: rgba(255,255,255,0.16); }
+.nav-toggle svg { transition: transform .2s; }
+body.nav-open .nav-toggle svg { transform: rotate(180deg); }
 
 .header-logo-img {
   height: 34px;
@@ -240,13 +257,18 @@ h1, h2, h3, h4 { margin: 0; }
    Sidebar
    ---------------------------------------------------------------- */
 .sidebar {
-  grid-column: 1;
-  grid-row: 2;
+  /* Dropdown panel under the header, opened by .nav-toggle (2026-10-05). */
+  display: none;
+  position: fixed; top: var(--header-h); left: 0;
+  width: var(--sidebar-w); max-height: calc(100vh - var(--header-h));
+  z-index: 30;
   background: var(--brand-dark);
   padding: 16px 10px 24px;
   overflow-y: auto;
-  border-right: 1px solid rgba(255,255,255,0.06);
+  border-radius: 0 0 10px 0;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.35);
 }
+body.nav-open .sidebar { display: block; }
 
 .nav-section { margin-bottom: 24px; }
 
@@ -328,7 +350,7 @@ h1, h2, h3, h4 { margin: 0; }
    Main content area
    ---------------------------------------------------------------- */
 .main {
-  grid-column: 2;
+  grid-column: 1 / -1;
   grid-row: 2;
   padding: 32px 36px;
   overflow-y: auto;

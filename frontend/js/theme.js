@@ -23,6 +23,7 @@
     // Apply saved preference immediately — runs before CSS is painted
     applyTheme(localStorage.getItem(KEY) || "light");
 
+
     // Wire the toggle button once the DOM is ready
     document.addEventListener("DOMContentLoaded", function () {
         // Sync icon text (may have been missed above if DOM wasn't ready)
@@ -30,6 +31,37 @@
         if (icon) {
             icon.innerHTML =
                 root.getAttribute("data-theme") === "dark" ? "<svg class=\"icon\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.93 4.93 1.41 1.41\"/><path d=\"m17.66 17.66 1.41 1.41\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.34 17.66-1.41 1.41\"/><path d=\"m19.07 4.93-1.41 1.41\"/></svg>" : "<svg class=\"icon\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/></svg>";
+        }
+
+        // Dropdown navigation: a chevron injected right after the logo on
+        // every page with the standard header; it opens the sidebar as a
+        // dropdown panel (see base.css .nav-toggle / body.nav-open).
+        var logo = document.querySelector(".header-logo");
+        var nav = document.querySelector(".sidebar");
+        if (logo && nav && !document.getElementById("nav-toggle")) {
+            var nt = document.createElement("button");
+            nt.id = "nav-toggle"; nt.className = "nav-toggle"; nt.type = "button";
+            nt.title = "Menu";
+            nt.setAttribute("aria-label", "Open navigation menu");
+            nt.setAttribute("aria-expanded", "false");
+            nt.innerHTML = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg>";
+            logo.insertAdjacentElement("afterend", nt);
+            function setNav(open) {
+                document.body.classList.toggle("nav-open", open);
+                nt.setAttribute("aria-expanded", String(open));
+            }
+            nt.addEventListener("click", function (e) {
+                e.stopPropagation();
+                setNav(!document.body.classList.contains("nav-open"));
+            });
+            nav.addEventListener("click", function (e) {
+                e.stopPropagation();
+                if (e.target.closest("a")) setNav(false);   // picked a page
+            });
+            document.addEventListener("click", function () { setNav(false); });
+            document.addEventListener("keydown", function (e) {
+                if (e.key === "Escape") setNav(false);
+            });
         }
 
         var btn = document.getElementById("theme-toggle");

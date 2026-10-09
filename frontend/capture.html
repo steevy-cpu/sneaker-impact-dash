@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Capture — Sneaker Impact</title>
-    <script src="js/theme.js?v=3"></script>
-    <link rel="stylesheet" href="css/base.css?v=2">
-    <link rel="stylesheet" href="css/components.css?v=11">
+    <script src="js/theme.js?v=4"></script>
+    <link rel="stylesheet" href="css/base.css?v=3">
+    <link rel="stylesheet" href="css/components.css?v=13">
 </head>
 <body>
 <div class="layout">
@@ -89,8 +89,7 @@
             </div>
             <div class="card-body">
                 <!-- Live camera preview (getUserMedia); frozen snapshot shown after
-                     capture. The insole-mode panel sits to the RIGHT of the feed so
-                     the operator sees the active mode at a glance before every shot. -->
+                     capture. The box-data form sits to the RIGHT of the feed. -->
                 <div class="capture-stage-row">
                     <div class="capture-stage" id="capture-stage">
                         <video class="capture-video" id="capture-video" autoplay playsinline muted></video>
@@ -103,20 +102,67 @@
                         <span class="capture-frozen-badge" id="frozen-badge" style="display:none;">CAPTURED</span>
                         <div class="capture-stage-msg" id="stage-msg">Starting camera…</div>
                     </div>
-                    <!-- Insole-only mode (feature-flagged): hidden unless the station
-                         config sets insole_mode. Toggled ON: this capture is a box of
-                         INSOLES — shoe counts hide, barcode becomes required, weight
-                         auto-fills from the shipment lookup. -->
-                    <aside class="insole-panel" id="insole-toggle-row" style="display:none;">
-                        <span class="insole-panel-title">Capture mode</span>
-                        <label class="insole-switch" title="Switch between shoe boxes and insole boxes">
-                            <input type="checkbox" id="insole-toggle">
-                            <span class="insole-switch-track" aria-hidden="true"></span>
-                        </label>
-                        <span class="insole-mode-label" id="insole-mode-label">👟 Shoes</span>
-                        <span class="insole-badge" id="insole-badge" style="display:none;">
-                            INSOLE MODE<br>scan barcode · weight auto-fills · no shoe counts
-                        </span>
+                    <!-- Box data beside the feed (2026-10-05): the weight / shoe-count
+                         fields, the note and the Capture & Send buttons sit to the
+                         RIGHT of the camera, in the original top-to-bottom order, so the
+                         operator fills them while watching the table. The capture-mode
+                         (insoles) toggle that used to live here is removed for now; its
+                         JS stays flag-gated and inert without the elements. -->
+                    <aside class="capture-side-form" id="capture-side-form">
+                    <!-- Barcode field — mirrors the desktop "Barcode/Tracking Number" input -->
+                    <div class="capture-barcode-row">
+                        <label class="form-label" for="barcode-input">📦 Barcode / Tracking Number</label>
+                        <input class="form-input" id="barcode-input" type="text"
+                               placeholder="Auto-detected or manual entry…" autocomplete="off"
+                               inputmode="text" autofocus>
+                        <span class="capture-barcode-status" id="barcode-status">Ready for barcode scanning…</span>
+                        <div class="shipment-preview" id="shipment-preview" style="display:none;"></div>
+                    </div>
+                    <!-- Always-visible box data (full-send): fill these, then press the button -->
+                    <div class="box-grid">
+                        <div class="box-field">
+                            <div class="box-field-label">⚖️ Weight (lbs)</div>
+                            <input class="form-input" id="cap-weight" type="number" min="0" max="999.9" step="0.1" placeholder="0" inputmode="decimal">
+                        </div>
+                        <div class="box-field">
+                            <div class="box-field-label">✅ Good Sneakers</div>
+                            <input class="form-input" id="cap-good" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
+                        </div>
+                        <div class="box-field">
+                            <div class="box-field-label">💀 End of Life</div>
+                            <input class="form-input" id="cap-eol" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
+                        </div>
+                        <div class="box-field">
+                            <div class="box-field-label">👟 Casuals</div>
+                            <input class="form-input" id="cap-casuals" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
+                        </div>
+                        <div class="box-field">
+                            <div class="box-field-label">🥿 Singles</div>
+                            <input class="form-input" id="cap-singles" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
+                        </div>
+                    </div>
+                    <!-- Operator note (optional): anything worth remembering about this
+                         box — condition, contamination, odd contents. Insole counts in
+                         combined boxes are typed HERE too ("25 pair currex"): the
+                         lenient extractor (js/insole_parse.js mirror; server is the
+                         authority) picks them up and the preview line below confirms
+                         what will be recorded. Never blocks a send. -->
+                    <div class="box-note">
+                        <div class="box-field-label" style="text-align:left;">
+                            📝 Note <span style="opacity:.6; font-weight:400;">(optional — insole counts go here too, e.g. "25 pair currex")</span>
+                        </div>
+                        <textarea class="form-input" id="cap-note" rows="2" maxlength="500"
+                                  placeholder="Anything worth flagging about this box — e.g. wet/moldy, damaged label, insole counts like &quot;25 pair currex&quot;…"></textarea>
+                        <div class="box-note-count"><span id="cap-note-count">0</span>/500</div>
+                        <div class="insole-parse-preview" id="insole-parse-preview"></div>
+                    </div>
+                    <div class="form-error" id="cap-error" style="display:none;"></div>
+                    <div class="capture-actions">
+                        <button class="btn-capture" id="capture-btn">🎥 Capture &amp; Send</button>
+                        <button class="btn-secondary" id="upload-btn" type="button">Upload image…</button>
+                        <input type="file" id="file-input" accept="image/*" style="display:none;">
+                        <button class="btn-secondary" id="learn-btn" type="button" title="Bind the USB-C hardware button">🔘 Set USB button</button>
+                    </div>
                     </aside>
                 </div>
                 <!-- Live Placement Validation readiness: ONE slim strip UNDER the
@@ -143,63 +189,6 @@
                 </div>
 
                 <div class="capture-controls">
-                    <!-- Barcode field — mirrors the desktop "Barcode/Tracking Number" input -->
-                    <div class="capture-barcode-row">
-                        <label class="form-label" for="barcode-input">📦 Barcode / Tracking Number</label>
-                        <input class="form-input" id="barcode-input" type="text"
-                               placeholder="Auto-detected or manual entry…" autocomplete="off"
-                               inputmode="text" autofocus>
-                        <span class="capture-barcode-status" id="barcode-status">Ready for barcode scanning…</span>
-                        <div class="shipment-preview" id="shipment-preview" style="display:none;"></div>
-                    </div>
-
-                    <!-- Always-visible box data (full-send): fill these, then press the button -->
-                    <div class="box-grid">
-                        <div class="box-field">
-                            <div class="box-field-label">⚖️ Weight (lbs)</div>
-                            <input class="form-input" id="cap-weight" type="number" min="0" max="999.9" step="0.1" placeholder="0" inputmode="decimal">
-                        </div>
-                        <div class="box-field">
-                            <div class="box-field-label">✅ Good Sneakers</div>
-                            <input class="form-input" id="cap-good" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
-                        </div>
-                        <div class="box-field">
-                            <div class="box-field-label">💀 End of Life</div>
-                            <input class="form-input" id="cap-eol" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
-                        </div>
-                        <div class="box-field">
-                            <div class="box-field-label">👟 Casuals</div>
-                            <input class="form-input" id="cap-casuals" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
-                        </div>
-                        <div class="box-field">
-                            <div class="box-field-label">🥿 Singles</div>
-                            <input class="form-input" id="cap-singles" type="number" min="0" max="999" step="1" placeholder="0" inputmode="numeric">
-                        </div>
-                    </div>
-
-                    <!-- Operator note (optional): anything worth remembering about this
-                         box — condition, contamination, odd contents. Insole counts in
-                         combined boxes are typed HERE too ("25 pair currex"): the
-                         lenient extractor (js/insole_parse.js mirror; server is the
-                         authority) picks them up and the preview line below confirms
-                         what will be recorded. Never blocks a send. -->
-                    <div class="box-note">
-                        <div class="box-field-label" style="text-align:left;">
-                            📝 Note <span style="opacity:.6; font-weight:400;">(optional — insole counts go here too, e.g. "25 pair currex")</span>
-                        </div>
-                        <textarea class="form-input" id="cap-note" rows="2" maxlength="500"
-                                  placeholder="Anything worth flagging about this box — e.g. wet/moldy, damaged label, insole counts like &quot;25 pair currex&quot;…"></textarea>
-                        <div class="box-note-count"><span id="cap-note-count">0</span>/500</div>
-                        <div class="insole-parse-preview" id="insole-parse-preview"></div>
-                    </div>
-                    <div class="form-error" id="cap-error" style="display:none;"></div>
-
-                    <div class="capture-actions">
-                        <button class="btn-capture" id="capture-btn">🎥 Capture &amp; Send</button>
-                        <button class="btn-secondary" id="upload-btn" type="button">Upload image…</button>
-                        <input type="file" id="file-input" accept="image/*" style="display:none;">
-                        <button class="btn-secondary" id="learn-btn" type="button" title="Bind the USB-C hardware button">🔘 Set USB button</button>
-                    </div>
                     <!-- Capture timing: time between successful captures (server-measured). -->
                     <div id="cap-timing" role="button" tabindex="0" title="Click to open the capture log" style="font-size:var(--text-xs); color:var(--text-muted); font-variant-numeric:tabular-nums; margin-top:4px; cursor:pointer; text-decoration:underline dotted;">Last capture: – · Average: – · Captures: –</div>
                     <div class="capture-hint" id="cap-hint">Enter box data, then press the <strong>USB button</strong> (or click <strong>Capture &amp; Send</strong>) to photograph &amp; queue.</div>
@@ -275,6 +264,6 @@
 <script src="js/api.js?v=16"></script>
 <script src="js/utils.js"></script>
 <script src="js/insole_parse.js?v=2"></script>
-<script src="js/capture.js?v=26"></script>
+<script src="js/capture.js?v=28"></script>
 </body>
 </html>

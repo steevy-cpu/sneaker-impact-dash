@@ -159,10 +159,11 @@ _timing = {"count": 0, "last_perf": None, "last_gap": None, "gap_sum": 0.0, "gap
            "since": None, "last_ts": None, "csv_mtime": None, "gaps": [], "rows": []}
 # "Active" average: breaks, lunches and overnight gaps are logged like any
 # other gap (the log stays raw and honest) but swamp a plain mean (1747 s vs
-# a 96 s median on the first week). User's rule (2026-10-05): a gap counts as
-# active capturing only if it is <= ACTIVE_MAX_GAP_SEC; anything longer is a
-# pause and is excluded from the average.
-ACTIVE_MAX_GAP_SEC = 60.0
+# a 96 s median on the first week). User's rule (2026-10-05, raised from 60
+# the same day): a gap counts as active capturing only if it is UNDER
+# ACTIVE_MAX_GAP_SEC; 160 s or more is a pause, excluded from the average and
+# shown as "null" in the capture log.
+ACTIVE_MAX_GAP_SEC = 160.0
 _timing_lock = threading.Lock()
 
 
@@ -254,7 +255,7 @@ def _timing_refresh_locked():
 
 def _active_stats(gaps):
     """Fixed-ceiling cut -> (active_mean, cutoff_s, n_kept, n_excluded)."""
-    kept = [g for g in gaps if g <= ACTIVE_MAX_GAP_SEC]
+    kept = [g for g in gaps if g < ACTIVE_MAX_GAP_SEC]
     mean = sum(kept) / len(kept) if kept else None
     return mean, ACTIVE_MAX_GAP_SEC, len(kept), len(gaps) - len(kept)
 
@@ -516,14 +517,20 @@ def capture_stats_log(limit: int = Query(300, ge=1, le=2000),
     accepted, nulled = [], []
     for r in reversed(rows):
         t = found.get(r["table_id"]) if r["table_id"] else None
-        item = {"capture_number": r["n"], "at": r["ts"], "gap_sec": r["gap"],
-                "table_id": r["table_id"]}
+        gap = r["gap"]
+        counted = gap is not None and gap < ACTIVE_MAX_GAP_SEC
+        # gap_sec is null for excluded captures (first of the day, or a pause
+        # of ACTIVE_MAX_GAP_SEC or more); the raw value stays in raw_gap_sec.
+        item = {"capture_number": r["n"], "at": r["ts"],
+                "gap_sec": gap if counted else None, "raw_gap_sec": gap,
+                "counted": counted, "table_id": r["table_id"]}
         if t:
             item.update(status=t["status"], num_pairs=t["num_pairs"], barcode=t["barcode"])
             accepted.append(item)
         else:
             nulled.append(item)
     return {"accepted": accepted, "nulled": nulled,
+            "active_cutoff_sec": ACTIVE_MAX_GAP_SEC,
             "counts": {"accepted": len(accepted), "nulled": len(nulled)}}
 
 

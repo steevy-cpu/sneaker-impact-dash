@@ -1667,9 +1667,28 @@ tr.row-new { animation: row-flash 2s ease-out forwards; }
   font-size: var(--text-xs); line-height: 1.6; padding: 6px 10px;
   border-radius: var(--radius-md); background: rgba(8,166,194,.16); color: var(--text-muted);
 }
-/* Narrow screens: panel drops below the feed as a horizontal strip. */
-@media (max-width: 860px) {
+/* --- Box-data side form (to the right of the camera feed, 2026-10-05) --- */
+.capture-side-form {
+  flex: 0 0 420px; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+}
+.capture-side-form .capture-barcode-row { gap: 4px; }
+.capture-side-form .capture-barcode-row .form-label { font-size: var(--text-xs); }
+.capture-side-form .capture-actions { gap: 8px; }
+.capture-side-form .btn-capture { min-width: 100%; padding: 14px 20px; }
+.capture-side-form .capture-actions .btn-secondary { flex: 1 1 0; }
+.capture-side-form .box-grid { gap: 10px; }
+.capture-side-form .box-field { padding: 8px 10px; }
+.capture-side-form .box-field-label { font-size: var(--text-xs); }
+.capture-side-form .box-field .form-input { font-size: var(--text-base); padding: 6px 8px; }
+.capture-side-form .box-note {
+  margin-top: 0; flex: 1 1 auto; display: flex; flex-direction: column; padding: 8px 10px;
+}
+.capture-side-form .box-note .box-field-label { font-size: var(--text-xs); }
+.capture-side-form .box-note textarea.form-input { flex: 1 1 auto; min-height: 44px; }
+/* Narrow screens: side form drops below the feed. */
+@media (max-width: 1000px) {
   .capture-stage-row { flex-direction: column; align-items: center; }
+  .capture-side-form { flex: initial; width: 100%; max-width: 1100px; }
   .insole-panel { flex: initial; width: 100%; max-width: 1100px;
                   flex-direction: row; flex-wrap: wrap; padding: 10px 12px; }
 }
