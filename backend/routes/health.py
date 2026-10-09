@@ -137,6 +137,34 @@ def data_quality(conn: sqlite3.Connection = Depends(get_db)):
     except sqlite3.Error:
         pass
 
+    # 4b) Partner names on Table Photos (partner resolver, 2026-10-09). Tables
+    #     older than an hour should have a partner; the ~8% that never do are
+    #     shipments whose label isn't in Airtable's Labels Created table.
+    try:
+        from backend.services import partner_resolver as _pr
+        st = _pr.status(conn)
+        tot, miss = cur(
+            "SELECT COUNT(*), SUM(CASE WHEN r.state != 'resolved' THEN 1 ELSE 0 END) "
+            "FROM shipment_resolve r JOIN table_photos t ON t.id = r.table_photo_id "
+            "WHERE t.created_at >= ? AND t.created_at < ?",
+            (since7, (datetime.now() - timedelta(hours=1)).isoformat())).fetchone()
+        tot, miss = tot or 0, miss or 0
+        pct = round(100.0 * miss / tot, 1) if tot else 0.0
+        stalled = st["overdue_15min"]
+        bad = (tot >= 20 and pct > 40) or stalled > 50
+        warn = (tot >= 20 and pct > 15) or stalled > 0
+        checks.append(_check(
+            "partner_names", "Partner names (7d)", "fail" if bad else ("warn" if warn else "ok"),
+            f"{pct}%",
+            f"{miss} of {tot} table(s) from the last 7 days have no partner yet"
+            + (f"; {stalled} resolver check(s) overdue." if stalled else ".")
+            + " Usually the shipment's label is missing from Airtable's Labels Created table.",
+            "Link the Partner on the Shipments Received row in Airtable, then POST "
+            "/api/partner-resolver/recheck. If many are overdue, check the resolver in the service log."
+            if (warn or bad) else None))
+    except sqlite3.Error:
+        pass
+
     # 5) Unknown-brand rate spike (recent vs overall).
     def unk_rate(where_extra="", params=()):
         tot = cur(f"SELECT COUNT(*) FROM pairs WHERE 1=1 {where_extra}", params).fetchone()[0]

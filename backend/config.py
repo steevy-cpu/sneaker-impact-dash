@@ -319,6 +319,12 @@ AIRTABLE_NOTES_FIELD = os.getenv("AIRTABLE_NOTES_FIELD", "").strip()
 # never lost if the shipment is imported AFTER it was scanned). How often the
 # background retry worker re-attempts pending rows.
 OUTBOX_RETRY_SECONDS = int(os.getenv("OUTBOX_RETRY_SECONDS", "300"))  # 5 min
+
+# Partner resolver (services/partner_resolver.py): background loop that keeps the
+# partner name on every table photo correct, re-checking Airtable until it appears.
+PARTNER_RESOLVER_ENABLED = os.getenv("PARTNER_RESOLVER_ENABLED", "1") not in ("0", "false", "False")
+PARTNER_RESOLVER_SECONDS = int(os.getenv("PARTNER_RESOLVER_SECONDS", "20"))   # idle poll
+PARTNER_RESOLVER_BATCH   = int(os.getenv("PARTNER_RESOLVER_BATCH", "200"))    # rows per pass
 # Auto-purge: a row still pending after this many days is deleted by the retry
 # worker (the shipment never appeared — usually a bad barcode scan; the table
 # photo and its pairs are untouched). NOT attempts-based: attempts tick every

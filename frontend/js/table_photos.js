@@ -71,7 +71,8 @@ async function loadList() {
             <td class="text-sm">${boxSummary(t)}</td>
             <td>${statusBadge(t.status)}</td>
             <td class="text-sm">${t.status === "completed" ? t.num_pairs : "—"}</td>
-            <td>${t.shipment_info && t.shipment_info.partner ? "📦 " + esc(t.shipment_info.partner) : "—"}</td>
+            <td>${t.shipment_info && t.shipment_info.partner ? "📦 " + esc(t.shipment_info.partner)
+                : (t.shipment_info ? '<span class="td-muted" title="Found in Airtable, but no Partner is linked to this shipment">no partner in Airtable</span>' : "—")}</td>
             <td class="text-sm">${notePreview(t)}</td>
         </tr>`).join("");
     c.innerHTML = `<div class="table-wrap"><table>
@@ -109,7 +110,7 @@ async function openDetail(id) {
     catch (err) { body.innerHTML = `<div class="error-state">${esc(err.message)}</div>`; return; }
 
     const ship = t.shipment_info
-        ? `<div class="tp-kv"><span>Shipment</span><b>${esc(t.shipment_info.partner || "matched")}${t.shipment_info.weight != null ? " · " + esc(t.shipment_info.weight) + " lb" : ""}</b></div>`
+        ? `<div class="tp-kv"><span>Shipment</span><b>${esc(t.shipment_info.partner || "no partner in Airtable")}${t.shipment_info.weight != null ? " · " + esc(t.shipment_info.weight) + " lb" : ""}</b></div>`
         : "";
     const err = t.error_message ? `<div class="form-error" style="display:block">${esc(t.error_message)}</div>` : "";
     // Show the thumbnail in the modal (the original can be several MB);

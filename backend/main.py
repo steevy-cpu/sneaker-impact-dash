@@ -25,8 +25,8 @@ from backend.config import (APP_MODE, IMAGES_DIR, SIM_IMAGES_DIR, FRONTEND_DIR,
 from backend.database import init_db, get_connection
 from backend.routes import (ai_database, airtable_outbox, analytics, batches, capture,
                             config_station, export, health, it_auth, label_data,
-                            labeling, pairs, public_crops, reidentify, shipment,
-                            shoes, simulation, tableau)
+                            labeling, pairs, partner_resolver, public_crops, reidentify,
+                            shipment, shoes, simulation, tableau)
 
 # Directories must exist before app.mount() is called (mount happens at import time)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -76,11 +76,17 @@ async def lifespan(app: FastAPI):
     from backend.services.camera_persist import reapplier
     reapplier.start()
 
+    # 6. Start the partner resolver (keeps shipment_info.partner correct for every
+    #    table photo; re-checks Airtable on a backoff ladder until a partner exists).
+    from backend.services.partner_resolver import resolver as partner_resolver_worker
+    partner_resolver_worker.start()
+
     yield  # --- app is live here ---
 
     worker.stop()
     retrier.stop()
     reapplier.stop()
+    partner_resolver_worker.stop()
     print("\nShutting down cleanly.")
 
 
@@ -212,6 +218,7 @@ app.include_router(labeling.router)        # multi-worker table claiming: /api/l
 app.include_router(public_crops.router)     # signed public crop serving (Lens): /public/crop/*
 app.include_router(it_auth.router)          # IT gate login: /it, /api/it/*
 app.include_router(ai_database.router)      # AI Database page search: /api/ai-database/*
+app.include_router(partner_resolver.router) # partner-name resolver status / recheck: /api/partner-resolver/*
 
 
 # ---------------------------------------------------------------------------

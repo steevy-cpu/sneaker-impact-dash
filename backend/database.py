@@ -224,6 +224,9 @@ def init_db():
     # label_data folder index (perf review 2026-10-05) -- see services/label_index.py
     from backend.services import label_index
     label_index.ensure_schema(conn)
+    # partner-name resolver queue (2026-10-09) -- see services/partner_resolver.py
+    from backend.services import partner_resolver
+    partner_resolver.ensure_schema(conn)
 
     conn.commit()
     _add_columns_if_missing(conn)
