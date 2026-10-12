@@ -153,6 +153,40 @@ class ResolverTests(unittest.TestCase):
         finally:
             other.rollback(); other.close()
 
+    # -- UPS keys and the UI state ------------------------------------------
+    def test_ups_table_is_keyed_by_the_full_number(self):
+        self.add("U1", "1Z197BY20312704202"); pr.discover(self.conn)
+        self.assertEqual(self.row("U1")["match_barcode"], "1Z197BY20312704202")
+
+    def test_stale_ups_fragment_keys_are_rekeyed_and_requeued_by_the_full_sweep(self):
+        self.add("U1", "1z197by20312704202"); pr.discover(self.conn)
+        self.conn.execute("UPDATE shipment_resolve SET match_barcode='Y20312704202', state='expired', "
+                          "attempts=6, next_try_at=NULL WHERE table_photo_id='U1'"); self.conn.commit()
+        pr.discover(self.conn, full=False)                        # the cheap poll must not touch it
+        self.assertEqual(self.row("U1")["match_barcode"], "Y20312704202")
+        pr.discover(self.conn, full=True)                         # startup / hourly sweep repairs it
+        r = self.row("U1")
+        self.assertEqual((r["match_barcode"], r["state"], r["attempts"]), ("1Z197BY20312704202", "pending", 0))
+        self.assertIsNotNone(r["next_try_at"])
+
+    def test_ups_table_resolves_end_to_end(self):
+        self.add("U1", "1Z197BY20312704202")
+        pr.run_pass(self.conn, StubLookup({"1Z197BY20312704202": info("1Z197BY20312704202", "UPS Partner")}))
+        self.assertEqual(self.partner_of("U1"), "UPS Partner")
+
+    def test_ui_states_explain_why_there_is_no_partner(self):
+        from backend.routes.capture import _attach_shipment_state
+        for tid, bc in (("A", "111111111111"), ("B", "222222222222"), ("C", "333333333333"),
+                        ("D", "444444444444"), ("NOBC", None)):
+            self.add(tid, bc)
+        pr.discover(self.conn)
+        self.conn.execute("UPDATE shipment_resolve SET state='pending', attempts=3 WHERE table_photo_id='B'")
+        self.conn.execute("UPDATE shipment_resolve SET state='blank', attempts=2 WHERE table_photo_id='C'")
+        self.conn.execute("UPDATE shipment_resolve SET state='expired', attempts=9 WHERE table_photo_id='D'")
+        self.conn.commit()
+        items = _attach_shipment_state(self.conn, [{"id": i} for i in ("A", "B", "C", "D", "NOBC")])
+        self.assertEqual([i["shipment_state"] for i in items], ["checking", "pending", "blank", "expired", None])
+
     # -- expiry and manual recheck -----------------------------------------
     def test_old_unresolved_table_expires_and_recheck_revives_it(self):
         self.add("T1", "123456789012", created=datetime.now() - timedelta(days=31))

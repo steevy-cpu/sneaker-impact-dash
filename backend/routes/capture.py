@@ -134,9 +134,10 @@ def _clean_barcode(barcode):
     "<tracking>9622…<tracking>") by keying off the DIGIT count, not a "96" prefix:
     a routing/SSCC or double scan yields >=22 digits, and the real tracking is the
     trailing 12. Normal 12-15 digit tracking numbers, UPS "1Z…" codes (letters →
-    few digits), and short/test scans pass through untouched. The trailing-12
-    result is identical to what normalize_barcode already matches on, so this only
-    cleans the STORED value — matching/sync are unchanged."""
+    few digits), and short/test scans pass through untouched. For FedEx the
+    trailing-12 result is identical to what normalize_barcode matches on, so this
+    only cleans the STORED value. (UPS is matched on its FULL number by
+    normalize_barcode, never trimmed.)"""
     bc = (barcode or "").strip()
     digits = "".join(ch for ch in bc if ch.isdigit())
     if len(digits) >= 22:
@@ -743,6 +744,27 @@ async def capture(
 # Read
 # ---------------------------------------------------------------------------
 
+def _attach_shipment_state(conn, items):
+    """Add `shipment_state` to table-photo dicts so the UI can say WHY there is no
+    partner: checking | pending (not in Airtable yet) | blank (row, no Partner) |
+    expired | resolved | None (no barcode). One indexed IN query per page."""
+    ids = [i["id"] for i in items]
+    states = {}
+    try:
+        for k in range(0, len(ids), 400):
+            chunk = ids[k:k + 400]
+            for r in conn.execute(
+                    "SELECT table_photo_id, state, attempts FROM shipment_resolve "
+                    f"WHERE table_photo_id IN ({','.join('?' * len(chunk))})", chunk):
+                st = r["state"]
+                states[r["table_photo_id"]] = "checking" if (st == "pending" and not r["attempts"]) else st
+    except sqlite3.Error:
+        pass
+    for i in items:
+        i["shipment_state"] = states.get(i["id"])
+    return items
+
+
 @router.get("/table-photos", summary="List table photos")
 def list_table_photos(
     page:      int = Query(1, ge=1),
@@ -768,7 +790,7 @@ def list_table_photos(
         "total":     total,
         "page":      page,
         "page_size": page_size,
-        "items":     [table_photo_to_dict(r) for r in rows],
+        "items":     _attach_shipment_state(conn, [table_photo_to_dict(r) for r in rows]),
     }
 
 
@@ -781,6 +803,7 @@ def get_table_photo(tp_id: str, conn: sqlite3.Connection = Depends(get_db)):
         "SELECT * FROM pairs WHERE table_photo_id = ? ORDER BY id", (tp_id,)
     ).fetchall()
     result = table_photo_to_dict(row)
+    _attach_shipment_state(conn, [result])
     result["pairs"] = [pair_to_dict(p) for p in pairs]
     return result
 

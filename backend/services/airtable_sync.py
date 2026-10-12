@@ -19,7 +19,7 @@ import urllib.request
 from backend.config import (AIRTABLE_API_KEY, AIRTABLE_BASE_ID,
                             AIRTABLE_SHIPMENTS_TABLE, SHIPMENT_BARCODE_TRIM,
                             AIRTABLE_SYNC_ENABLED)
-from backend.services.shipment_lookup import normalize_barcode
+from backend.services.shipment_lookup import barcode_formula, is_ups_key, normalize_barcode
 
 
 class AirtableSync:
@@ -53,7 +53,7 @@ class AirtableSync:
                 raise
 
     def _find_id(self, barcode):
-        formula = "{Barcode}='%s'" % barcode.replace("'", "")
+        formula = barcode_formula(barcode)
         url = self.base_url + "?maxRecords=1&filterByFormula=" + urllib.parse.quote(formula)
         recs = self._request("GET", url).get("records", [])
         return recs[0]["id"] if recs else None
@@ -111,9 +111,11 @@ class AirtableSync:
             if rid:
                 self._request("PATCH", f"{self.base_url}/{rid}", {"fields": fields})
                 return ("synced", rid)
-            # Only CREATE for a plausible tracking number (all digits, >=12) so
-            # camera/test scans (e.g. "…CAMTEST") never fabricate junk rows.
-            if not (match_barcode.isdigit() and len(match_barcode) >= 12):
+            # Only CREATE for a plausible tracking number so camera/test scans
+            # (e.g. "…CAMTEST") never fabricate junk rows: FedEx = all digits,
+            # >=12; UPS = a full 1Z + 16 alphanumerics (added 2026-10-09).
+            if not ((match_barcode.isdigit() and len(match_barcode) >= 12)
+                    or is_ups_key(match_barcode)):
                 return ("no_row", None)
             new_id = self._create(match_barcode, fields)
             return ("synced", new_id)

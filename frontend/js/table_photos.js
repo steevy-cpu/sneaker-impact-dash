@@ -71,8 +71,7 @@ async function loadList() {
             <td class="text-sm">${boxSummary(t)}</td>
             <td>${statusBadge(t.status)}</td>
             <td class="text-sm">${t.status === "completed" ? t.num_pairs : "—"}</td>
-            <td>${t.shipment_info && t.shipment_info.partner ? "📦 " + esc(t.shipment_info.partner)
-                : (t.shipment_info ? '<span class="td-muted" title="Found in Airtable, but no Partner is linked to this shipment">no partner in Airtable</span>' : "—")}</td>
+            <td>${shipCell(t)}</td>
             <td class="text-sm">${notePreview(t)}</td>
         </tr>`).join("");
     c.innerHTML = `<div class="table-wrap"><table>
@@ -83,6 +82,20 @@ async function loadList() {
     // Keep refreshing while anything is in-flight.
     const inFlight = data.items.some(t => t.status === "pending" || t.status === "processing");
     if (inFlight) startPolling(); else stopPolling();
+}
+
+/* Shipment column: the partner, or WHY there isn't one. */
+const SHIP_WHY = {
+    checking: ["checking…", "Just captured; the dash is looking this shipment up in Airtable."],
+    pending:  ["not in Airtable yet", "This shipment is not in Airtable yet. The dash keeps re-checking automatically."],
+    blank:    ["no partner in Airtable", "Found in Airtable, but no Partner is linked to this shipment."],
+    expired:  ["not in Airtable", "Never found in Airtable within 30 days of capture."],
+};
+function shipCell(t) {
+    const si = t.shipment_info;
+    if (si && si.partner) return "📦 " + esc(si.partner);
+    const why = si ? SHIP_WHY.blank : SHIP_WHY[t.shipment_state];
+    return why ? `<span class="td-muted" title="${esc(why[1])}">${why[0]}</span>` : "—";
 }
 
 function startPolling() {
@@ -109,9 +122,10 @@ async function openDetail(id) {
     try { t = await api.getTablePhoto(id); }
     catch (err) { body.innerHTML = `<div class="error-state">${esc(err.message)}</div>`; return; }
 
+    const shipWhy = t.shipment_info ? null : SHIP_WHY[t.shipment_state];
     const ship = t.shipment_info
         ? `<div class="tp-kv"><span>Shipment</span><b>${esc(t.shipment_info.partner || "no partner in Airtable")}${t.shipment_info.weight != null ? " · " + esc(t.shipment_info.weight) + " lb" : ""}</b></div>`
-        : "";
+        : (shipWhy ? `<div class="tp-kv"><span>Shipment</span><b title="${esc(shipWhy[1])}">${shipWhy[0]}</b></div>` : "");
     const err = t.error_message ? `<div class="form-error" style="display:block">${esc(t.error_message)}</div>` : "";
     // Show the thumbnail in the modal (the original can be several MB);
     // clicking it opens the full-resolution photo in a new tab.

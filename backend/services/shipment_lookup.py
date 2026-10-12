@@ -30,12 +30,47 @@ from backend.config import (SHIPMENT_LOOKUP_SOURCES, SHIPMENT_CACHE_TTL,
                             AIRTABLE_PARTNERS_TABLE)
 
 
+# UPS tracking numbers: "1Z" + 16 alphanumerics (18 chars). Airtable stores the
+# WHOLE number, so cutting it to the last 12 chars (right for FedEx) can never
+# match -- every UPS box silently missed its shipment row (found 2026-10-09).
+_UPS_RE = re.compile(r"1Z[0-9A-Z]{16}$")
+_UPS_KEY_RE = re.compile(r"1Z[0-9A-Z]{16}")
+_KEY_SAFE = re.compile(r"[^A-Za-z0-9\-]")
+
+
+def ups_key(barcode):
+    """The full UPPERCASE UPS tracking number if the scan ends in one (leading
+    junk and a lowercase '1z' tolerated), else None."""
+    up = re.sub(r"[^0-9A-Za-z]", "", barcode or "").upper()
+    m = _UPS_RE.search(up)
+    return m.group(0) if m else None
+
+
+def is_ups_key(key):
+    return bool(key) and bool(_UPS_KEY_RE.fullmatch(key))
+
+
 def normalize_barcode(barcode, trim=SHIPMENT_BARCODE_TRIM):
-    """Match what ShoeSort stores: the last `trim` chars (handles short codes)."""
+    """The key a scan is matched on. UPS 1Z numbers: the full number, uppercase.
+    Everything else (FedEx): the last `trim` chars, as ShoeSort stored them."""
+    ups = ups_key(barcode)
+    if ups:
+        return ups
     bc = (barcode or "").strip()
     if trim and len(bc) > trim:
         return bc[-trim:]
     return bc
+
+
+def barcode_formula(key):
+    """Airtable filterByFormula clause matching a Shipments Received row by key.
+    FedEx: the exact {Barcode} compare that has always worked. UPS: Airtable's
+    text compare is case-sensitive and rows hold both '1Z..' and '1z..' in
+    Barcode (Tracking Number is uppercase), so compare UPPER() of both."""
+    k = _KEY_SAFE.sub("", key or "")
+    if is_ups_key(k):
+        return ("OR(UPPER({Barcode}&'')='%s',UPPER({Tracking Number}&'')='%s')" % (k, k))
+    return "{Barcode}='%s'" % k
 
 
 class _TTLCache:
@@ -168,7 +203,7 @@ class AirtableShipmentLookup(ShipmentLookup):
         if not bc:
             return None
         try:
-            formula = "{Barcode}='%s'" % bc.replace("'", "")
+            formula = barcode_formula(bc)
             url = (f"https://api.airtable.com/v0/{self.base_id}/"
                    f"{urllib.parse.quote(self.shipments_table)}"
                    f"?maxRecords=1&filterByFormula={urllib.parse.quote(formula)}")
@@ -244,8 +279,7 @@ class AirtableShipmentLookup(ShipmentLookup):
         fparam = "".join("&fields%5B%5D=" + urllib.parse.quote(n) for n in sorted(want_fields))
         for i in range(0, len(wanted), self.BATCH):
             chunk = wanted[i:i + self.BATCH]
-            formula = "OR(" + ",".join(
-                "{Barcode}='%s'" % self._SAFE.sub("", b) for b in chunk) + ")"
+            formula = "OR(" + ",".join(barcode_formula(b) for b in chunk) + ")"
             recs, offset = [], None
             while True:
                 url = (base + "?pageSize=100&filterByFormula=" + urllib.parse.quote(formula)

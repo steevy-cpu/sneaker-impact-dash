@@ -44,6 +44,7 @@ from datetime import datetime, timedelta
 from backend.config import (PARTNER_RESOLVER_ENABLED, PARTNER_RESOLVER_SECONDS,
                             PARTNER_RESOLVER_BATCH, SHIPMENT_BARCODE_TRIM)
 from backend.database import get_connection
+from backend.services.shipment_lookup import normalize_barcode
 
 # seconds to wait after the Nth unresolved attempt; the last entry repeats.
 LADDER = [20, 60, 180, 600, 1800, 7200, 21600, 43200, 86400]
@@ -67,11 +68,31 @@ def _iso(dt):
 
 
 def match_key(barcode, trim=SHIPMENT_BARCODE_TRIM):
-    """Same normalisation the lookup and outbox use (last `trim` chars)."""
-    bc = _SAFE.sub("", (barcode or "").strip())
-    if trim and len(bc) > trim:
-        bc = bc[-trim:]
-    return bc
+    """The SAME key the lookup and outbox use (shipment_lookup.normalize_barcode):
+    last `trim` chars for FedEx, the full uppercase number for UPS 1Z."""
+    return normalize_barcode(_SAFE.sub("", (barcode or "").strip()), trim)
+
+
+def rekey_stale(conn):
+    """Re-derive keys for unresolved UPS rows queued before UPS got its own key
+    (they hold a useless 12-char fragment). Read-only against Airtable: it only
+    resets the dash's own queue so the rows are looked up again, correctly."""
+    rows = conn.execute(
+        "SELECT r.table_photo_id, t.barcode, r.match_barcode FROM shipment_resolve r "
+        "JOIN table_photos t ON t.id = r.table_photo_id "
+        "WHERE r.state != 'resolved' AND UPPER(t.barcode) LIKE '%1Z%'").fetchall()
+    now, fixed = _now(), 0
+    for r in rows:
+        key = match_key(r["barcode"])
+        if key and key != r["match_barcode"]:
+            conn.execute(
+                "UPDATE shipment_resolve SET match_barcode=?, state='pending', attempts=0, "
+                "next_try_at=?, lease_until=NULL, last_error=NULL WHERE table_photo_id=?",
+                (key, now, r["table_photo_id"]))
+            fixed += 1
+    if fixed:
+        conn.commit()
+    return fixed
 
 
 # -- schema ----------------------------------------------------------------
@@ -136,6 +157,8 @@ def discover(conn, full=True):
             "(table_photo_id, match_barcode, state, attempts, next_try_at, created_at, resolved_at) "
             "VALUES (?,?,?,?,?,?,?)", batch)
         conn.commit()
+    if full:
+        rekey_stale(conn)          # startup + hourly sweep also repairs stale keys
     return len(batch)
 
 
