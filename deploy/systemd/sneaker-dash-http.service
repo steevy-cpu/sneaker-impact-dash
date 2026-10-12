@@ -1,0 +1,17 @@
+[Unit]
+Description=Sneaker Impact Dash — HTTP (port 8000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@DASH_DIR@
+# Unbuffered stdout so [worker]/[outbox] prints reach journald immediately
+# (block-buffered prints made the worker look dead during long jobs).
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@DASH_DIR@/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

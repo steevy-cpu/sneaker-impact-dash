@@ -1,0 +1,6 @@
+[Unit]
+Description=Station-link Wi-Fi watchdog (re-activate wlp129s0f0 / 192.168.1.164 if NM gave up)
+
+[Service]
+Type=oneshot
+ExecStart=/home/sneakerai/.local/bin/wifi-watchdog.sh

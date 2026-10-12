@@ -1,0 +1,6 @@
+[Unit]
+Description=Sneaker Impact Dash — nightly data backup (db + images + label_data)
+
+[Service]
+Type=oneshot
+ExecStart=@DASH_DIR@/scripts/backup_dash.sh

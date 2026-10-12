@@ -1,0 +1,17 @@
+[Unit]
+Description=Sneaker Impact Dash — SAM3 preview worker (capture-page shoe guide, 127.0.0.1:8766)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# cwd must be the engine dir: the worker imports config/segment_utils from there
+# and loads sam3.pt by relative path.
+WorkingDirectory=@DASH_DIR@/sneaker_impact_training
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@DASH_DIR@/sneaker_impact_training/venv-sam3/bin/python3 @DASH_DIR@/backend/services/preview_worker.py --port 8766
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the dash data backup nightly at 02:30
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
