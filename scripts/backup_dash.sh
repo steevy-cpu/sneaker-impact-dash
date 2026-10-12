@@ -13,7 +13,8 @@
 # BACKUP_ROOT at an external drive or add an rclone push for real DR.
 set -euo pipefail
 
-DASH_DIR="/home/sneakerai/Documents/ShoeSort-main/sneaker-impact-dash"
+# Repo root = parent of this script's directory (works wherever the repo lives).
+DASH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 BACKUP_ROOT="${BACKUP_ROOT:-/home/sneakerai/Backups/sneaker-dash}"
 KEEP_DB=30
 
