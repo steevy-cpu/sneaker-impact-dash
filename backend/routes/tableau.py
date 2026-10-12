@@ -11,7 +11,7 @@ Design for the "must not slow/freeze the site" rule:
     uvicorn event loop), and a 60s in-memory TTL cache means repeated views /
     multiple watchers don't re-query at all.
 
-  GET /api/tableau/stats  ->  { kpis, status, brands, models, colors,
+  GET /api/tableau/stats  ->  { kpis, status, brands, models, colors, partners,
                                 ai{...}, pairing{...}, airtable{...},
                                 box{...}, timeline{...}, generated_at }
 """
@@ -110,6 +110,53 @@ def _bucket_conf(conn, col, where="1=1", params=()):
         ).fetchone()[0]
         counts.append(n)
     return {"labels": labels, "counts": counts}
+
+
+def _partner_stats(conn, tw, P, shoes_total, top_n=10):
+    """Top partners by shoes received, for the "Top 10 Partners" chart.
+
+    "Shoes" is the SAME operator-counted figure as the headline card
+    (good + end-of-life + casual per box), so the bars reconcile with it. The
+    partner is the name the partner resolver stored on each table photo
+    (table_photos.shipment_info -> partner); a box with no partner yet simply
+    isn't attributed, and `shoes_matched` / `shoes_total` say how much of the
+    total that leaves out.
+
+    Names are merged on case and whitespace ("Blue Ox Running Store" ==
+    "BLUE OX RUNNING STORE", a stray trailing newline is real data), displaying
+    the spelling that carries the most shoes. json_valid() guards the extract so
+    one malformed row can never fail the whole Tableau response. Cheap (one
+    GROUP BY over table_photos) and sits behind this endpoint's 60 s cache."""
+    rows = conn.execute(
+        f"SELECT p, COUNT(*), SUM(g), SUM(e), SUM(k) FROM ("
+        f"  SELECT CASE WHEN json_valid(shipment_info) "
+        f"         THEN json_extract(shipment_info, '$.partner') END AS p, "
+        f"         COALESCE(total_good_sneakers, 0) AS g, "
+        f"         COALESCE(total_end_of_life, 0) AS e, COALESCE(casuals, 0) AS k "
+        f"  FROM table_photos WHERE shipment_info IS NOT NULL AND {tw}) "
+        f"WHERE p IS NOT NULL AND TRIM(p) != '' GROUP BY p", P).fetchall()
+    merged = {}
+    for name, boxes, good, eol, cas in rows:
+        if not isinstance(name, str):
+            continue
+        key = " ".join(name.split()).casefold()
+        shoes = (good or 0) + (eol or 0) + (cas or 0)
+        m = merged.setdefault(key, {"best": ("", -1), "boxes": 0, "good": 0,
+                                    "eol": 0, "casual": 0, "shoes": 0})
+        if shoes > m["best"][1]:
+            m["best"] = (" ".join(name.split()), shoes)     # most-shoes spelling, whitespace tidied
+        m["boxes"] += boxes
+        m["good"] += good or 0
+        m["eol"] += eol or 0
+        m["casual"] += cas or 0
+        m["shoes"] += shoes
+    ranked = sorted(merged.values(), key=lambda m: (-m["shoes"], -m["boxes"], m["best"][0]))
+    top = [{"label": m["best"][0], "shoes": m["shoes"], "boxes": m["boxes"],
+            "good": m["good"], "eol": m["eol"], "casual": m["casual"]}
+           for m in ranked[:top_n] if m["shoes"] > 0]
+    matched = sum(m["shoes"] for m in ranked)
+    return {"top": top, "count": len(ranked), "shoes_matched": matched,
+            "shoes_total": shoes_total, "top_shoes": sum(t["shoes"] for t in top)}
 
 
 def _compute(conn: sqlite3.Connection, since=None) -> dict:
@@ -262,6 +309,8 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
         "co2e_tonnes": round(co2e_kg / 1000.0, 1),
     }
 
+    partners = _partner_stats(conn, tw, P, shoes_ct)
+
     # ---- insoles ----------------------------------------------------------
     # Two additive sources, no overlap: (1) insole-only capture runs, counted by
     # the engine into `pairs` rows under capture_mode='insoles'; (2) manual
@@ -340,6 +389,7 @@ def _compute(conn: sqlite3.Connection, since=None) -> dict:
         "brands": [{"label": l, "count": n} for l, n in brands[:15]],
         "models": [{"label": l, "count": n} for l, n in models[:12]],
         "colors": [{"label": c, "count": n} for c, n in colors],
+        "partners": partners,
         "ai": ai,
         "insoles": insoles,
         "pairing": pairing,

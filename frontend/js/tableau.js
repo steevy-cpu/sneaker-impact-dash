@@ -78,6 +78,46 @@ function donut(canvasId, labels, data, colors) {
 
 function pct(part, whole) { return whole ? Math.round(100 * part / whole) : 0; }
 
+// Top 10 partners by shoes received. "Shoes" = good + end-of-life + casual, the
+// same operator-counted figure as the headline card, so the bars reconcile with it.
+function renderPartners(p) {
+    const top = (p && p.top) || [];
+    if (!top.length) {
+        insight("ins-partners", "No partner-linked boxes in this time range yet.");
+        return;
+    }
+    mk("c-partners", {
+        type: "bar",
+        data: { labels: top.map(t => t.label), datasets: [{
+            data: top.map(t => t.shoes), borderWidth: 0, borderRadius: 5, backgroundColor: "#10b981" }] },
+        options: {
+            indexAxis: "y",
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
+                    title: (items) => top[items[0].dataIndex].label,
+                    label: (ctx) => {
+                        const t = top[ctx.dataIndex];
+                        return [`${n(t.shoes)} shoes from ${n(t.boxes)} boxes`,
+                                `${n(t.good)} reused · ${n(t.eol)} recycled · ${n(t.casual)} casual`];
+                    },
+                } },
+            },
+            scales: {
+                x: { beginAtZero: true, grid: { display: false } },
+                y: { grid: { display: false }, ticks: { callback: function (v) {
+                    const l = this.getLabelForValue(v);               // long store names: full text is in the tooltip
+                    return l.length > 30 ? l.slice(0, 29) + "…" : l;
+                } } },
+            },
+        },
+    });
+    const total = p.shoes_total || 0;
+    insight("ins-partners",
+        `Top ${top.length} sent <b>${n(p.top_shoes)}</b> shoes (${pct(p.top_shoes, total)}% of all) · ` +
+        `${n(p.count)} partners in range · partner known for ${pct(p.shoes_matched, total)}% of shoes`);
+}
+
 function render(d) {
     // ---- Impact / ESG headline ----
     const im = d.impact || {};
@@ -113,12 +153,8 @@ function render(d) {
     hbar("c-models", ml, mc, () => "#06b6d4");
     if (ml.length) insight("ins-models", `Most common silhouette: <b>${ml[0]}</b> (${n(mc[0])} pairs)`);
 
-    // ---- Colors ----
-    const cl = d.colors.map(c => c.label), cc = d.colors.map(c => c.count);
-    const cTot = cc.reduce((a, b) => a + b, 0);
-    donut("c-colors", cl, cc, cl.map(c => COLOR_HEX[(c || "").toLowerCase()] || "#cbd5e1"));
-    const unk = d.colors.find(c => (c.label || "").toLowerCase() === "unknown");
-    insight("ins-colors", `${cl.length} colors detected${unk ? ` · ${pct(unk.count, cTot)}% still uncolored` : ""}`);
+    // ---- Top partners (replaced the color-palette donut) ----
+    renderPartners(d.partners);
 
     // ---- Box composition ----
     const bx = d.box;
