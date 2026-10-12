@@ -21,6 +21,8 @@ journalctl --user -u sneaker-dash-https -f                        # logs ([worke
 systemctl --user status sneaker-dash-preview ollama
 ```
 
+**Preview worker restarts:** `sneaker-dash-preview` loads SAM3 lazily on its *first request*, so `/health` (`http://127.0.0.1:8766/health`) says `"loaded": false` until then, and that first request takes ~80 s. `"ok": true` only means the process is up. After restarting it, send one frame (e.g. POST an existing photo to `/api/capture-preview`) before judging it healthy; the capture page's "warming up" retry absorbs the delay for operators.
+
 Don't start uvicorn by hand with `nohup` — it collides with the services on the port. Frontend-only edits need no restart (bump the `?v=` on the changed JS/CSS). Restart when the queue is idle if you can: check `select status, count(*) from table_photos group by status` for `processing`.
 
 ## Safe maintenance
